@@ -1,2 +1,14 @@
-ipykernel
+yfinance
+pandas
+requests
+praw
 python-dotenv
+feedparser
+langchain
+langchain-openai
+streamlit
+plotly
+numpy
+beautifulsoup4
+lxml
+openpyxl
