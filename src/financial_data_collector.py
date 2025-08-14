@@ -275,51 +275,57 @@ class FinancialDataCollector:
     def get_company_news(self, ticker: str, company_name: str = None) -> List[Dict]:
         """Get recent news about a company using FREE sources"""
         all_articles = []
-
-        # Yahoo Finance News
+        
+        # Yahoo Finance News (Increase limit)
         try:
             stock = yf.Ticker(ticker)
             news = stock.news
-
-            for article in news[:10]:
+            
+            # CHANGE: Increase from 10 to 20 articles
+            for article in news[:20]:  # Was [:10]
                 formatted_article = {
-                    "title": article.get("title", ""),
-                    "description": article.get("summary", ""),
-                    "url": article.get("link", ""),
-                    "published_at": datetime.fromtimestamp(
-                        article.get("providerPublishTime", 0)
-                    ).isoformat(),
-                    "source": "Yahoo Finance",
-                    "provider": article.get("publisher", ""),
-                    "type": "yahoo_finance",
+                    'title': article.get('title', ''),
+                    'description': article.get('summary', ''),
+                    'url': article.get('link', ''),
+                    'published_at': datetime.fromtimestamp(article.get('providerPublishTime', 0)).isoformat(),
+                    'source': 'Yahoo Finance',
+                    'provider': article.get('publisher', ''),
+                    'type': 'yahoo_finance'
                 }
                 all_articles.append(formatted_article)
         except Exception as e:
             logger.warning(f"Error getting Yahoo Finance news: {e}")
-
-        # RSS Feeds
+        
+        # RSS Feeds (Add more sources and increase limits)
         if FEEDPARSER_AVAILABLE:
             try:
+                # CHANGE: Add more RSS feeds
                 rss_feeds = [
-                    "https://feeds.bloomberg.com/markets/news.rss",
-                    "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/",
+                    'https://feeds.bloomberg.com/markets/news.rss',
+                    'https://feeds.marketwatch.com/marketwatch/realtimeheadlines/',
+                    'https://www.cnbc.com/id/100003114/device/rss/rss.html',  # Added
+                    'https://feeds.reuters.com/reuters/businessNews',  # Added
+                    'https://finance.yahoo.com/news/rssindex'  # Added
                 ]
-
+                
                 for feed_url in rss_feeds:
                     try:
                         feed = feedparser.parse(feed_url)
-                        for entry in feed.entries[:5]:
+                        # CHANGE: Increase from 5 to 15 entries per feed
+                        for entry in feed.entries[:15]:  # Was [:5]
                             content = f"{entry.get('title', '')} {entry.get('summary', '')}".lower()
-                            if ticker.lower() in content or (
-                                company_name and company_name.lower() in content
-                            ):
+                            # CHANGE: Make search more flexible
+                            if (ticker.lower() in content or 
+                                (company_name and any(word.lower() in content for word in company_name.split()[:2]))):
+                                
                                 article = {
-                                    "title": entry.get("title", ""),
-                                    "description": entry.get("summary", ""),
-                                    "url": entry.get("link", ""),
-                                    "published_at": entry.get("published", ""),
-                                    "source": "RSS Feed",
-                                    "type": "rss_feed",
+                                    'title': entry.get('title', ''),
+                                    'description': entry.get('summary', ''),
+                                    'url': entry.get('link', ''),
+                                    'published_at': entry.get('published', ''),
+                                    'source': 'RSS Feed',
+                                    'feed_source': feed.feed.get('title', 'Unknown'),
+                                    'type': 'rss_feed'
                                 }
                                 all_articles.append(article)
                     except Exception as e:
@@ -327,8 +333,9 @@ class FinancialDataCollector:
                     time.sleep(0.5)
             except Exception as e:
                 logger.warning(f"Error getting RSS news: {e}")
-
-        return all_articles[:15]
+        
+        # CHANGE: Increase return limit from 15 to 30
+        return all_articles[:30]  # Was [:15]
 
     def get_reddit_sentiment(self, ticker: str) -> Dict[str, Any]:
         """Get Reddit sentiment data for a stock (FREE)"""
@@ -539,11 +546,11 @@ if __name__ == "__main__":
     if financial_metrics:
         print(f"   Company: {financial_metrics.get('company_name', 'N/A')}")
         print(f"   Current Price: ${financial_metrics.get('current_price', 'N/A')}")
-        print(
-            f"   Market Cap: ${financial_metrics.get('market_cap', 'N/A'):,}"
-            if financial_metrics.get("market_cap")
-            else "   Market Cap: N/A"
-        )
+        # FIXED: Added proper closing parenthesis for market cap formatting
+        if financial_metrics.get("market_cap"):
+            print(f"   Market Cap: ${financial_metrics.get('market_cap', 'N/A'):,}")
+        else:
+            print("   Market Cap: N/A")
 
     print("\n📰 Sample unstructured data:")
     news_articles = separated_data["unstructured"]["news_articles"]
