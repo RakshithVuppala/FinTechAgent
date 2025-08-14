@@ -12,6 +12,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add src to path for imports
 sys.path.append(os.path.dirname(__file__))
@@ -365,13 +369,13 @@ def main():
         # Stock input
         ticker = st.text_input(
             "Stock Ticker",
-            value="AAPL",
+            value="TSLA",
             help="Enter a stock ticker symbol (e.g., AAPL, MSFT, GOOGL)"
         ).upper()
         
         company_name = st.text_input(
             "Company Name (Optional)",
-            value="Apple Inc.",
+            value="Tesla",
             help="Optional: Enter full company name for better analysis"
         )
         
