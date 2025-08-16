@@ -93,4 +93,31 @@ target/
 /models/
 
 # exclude data from source control by default
-# /data/
+/data/raw/*
+/data/interim/*
+/data/processed/*
+/data/structured/*
+/data/vector_db/*
+/src/data/*
+
+# Keep directory structure but ignore contents
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/structured/.gitkeep
+!data/vector_db/.gitkeep
+!src/data/.gitkeep
+
+# Additional exclusions for this project
+*.pdf
+research_*.json
+*_research_report_*.json
+*_executive_summary_*.json
+
+# API Keys and sensitive information
+*.key
+*.pem
+config.ini
+
+# Streamlit cache
+.streamlit/

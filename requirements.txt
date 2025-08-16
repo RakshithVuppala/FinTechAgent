@@ -1,14 +1,36 @@
-yfinance
-pandas
-requests
-praw
-python-dotenv
-feedparser
-langchain
-langchain-openai
-streamlit
-plotly
-numpy
-beautifulsoup4
-lxml
-openpyxl
+# Core Data Science Libraries
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Financial Data Sources
+yfinance>=0.2.0
+requests>=2.31.0
+
+# Web Interface
+streamlit>=1.28.0
+plotly>=5.15.0
+
+# Database and Vector Storage
+chromadb>=0.4.0
+
+# LLM and AI Integration
+openai>=1.0.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+
+# Social Media and News
+praw>=7.7.0
+feedparser>=6.0.0
+
+# Web Scraping
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# File Processing
+openpyxl>=3.1.0
+
+# Configuration and Environment
+python-dotenv>=1.0.0
+
+# Additional Dependencies
+asyncio-extras>=1.3.0
