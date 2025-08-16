@@ -531,16 +531,58 @@ async def run_research_pipeline_orchestrated(ticker, company_name):
         metrics_container.empty()
 
         # Show detailed error information
-        st.error(f"❌ Research failed: {str(e)}")
+        error_str = str(e)
+        
+        # Check if it's a ticker validation error
+        if "Invalid ticker" in error_str or "Suggested alternatives" in error_str:
+            st.error(f"❌ Invalid Ticker: {ticker}")
+            
+            # Extract suggestions from error message if available
+            if "Suggested alternatives:" in error_str:
+                suggestions_part = error_str.split("Suggested alternatives:")[-1].strip()
+                suggestions = [s.strip() for s in suggestions_part.split(",")]
+                
+                st.warning("💡 **Did you mean one of these?**")
+                
+                # Create clickable buttons for suggestions
+                cols = st.columns(min(len(suggestions), 5))
+                for i, suggestion in enumerate(suggestions[:5]):
+                    with cols[i]:
+                        if st.button(f"📈 {suggestion}", key=f"suggestion_{i}", help=f"Research {suggestion} instead"):
+                            # Auto-fill the suggestion and trigger research
+                            st.session_state.suggested_ticker = suggestion
+                            st.rerun()
+                
+                st.info("👆 Click on a suggested ticker above to research it instead")
+            
+            # Show additional help
+            with st.expander("❓ How to find the correct ticker"):
+                st.markdown("""
+                **Tips for finding valid ticker symbols:**
+                - Use official company websites (usually in investor relations section)
+                - Check financial websites like Yahoo Finance, Google Finance, or Bloomberg
+                - For US stocks: Usually 1-5 letters (e.g., AAPL, MSFT, GOOGL)
+                - For ETFs: Often 3-4 letters (e.g., SPY, QQQ, VTI)
+                - Some tickers have extensions like .B for different share classes
+                
+                **Popular tickers to try:**
+                - Tech: AAPL, MSFT, GOOGL, AMZN, TSLA, META, NVDA
+                - Financial: JPM, BAC, BRK.B, V, MA
+                - Healthcare: JNJ, PFE, UNH, ABBV
+                - Consumer: KO, PEP, MCD, NKE, DIS
+                - ETFs: SPY, QQQ, VTI, VOO
+                """)
+        else:
+            st.error(f"❌ Research failed: {error_str}")
+            
+            # Show system health for debugging
+            health = orchestrator.get_system_health()
+            with st.expander("🔧 System Diagnostics"):
+                st.json(health)
 
-        # Show system health for debugging
-        health = orchestrator.get_system_health()
-        with st.expander("🔧 System Diagnostics"):
-            st.json(health)
-
-        # Show detailed error traceback for debugging
-        with st.expander("📋 Error Details"):
-            st.code(traceback.format_exc())
+            # Show detailed error traceback for debugging
+            with st.expander("📋 Error Details"):
+                st.code(traceback.format_exc())
 
         raise e
 
@@ -812,10 +854,15 @@ def main():
 
         st.markdown("---")
 
-        # Stock input
+        # Stock input with suggestion handling
+        default_ticker = "TSLA"
+        if hasattr(st.session_state, 'suggested_ticker') and st.session_state.suggested_ticker:
+            default_ticker = st.session_state.suggested_ticker
+            st.session_state.suggested_ticker = None  # Clear after use
+            
         ticker = st.text_input(
             "Stock Ticker",
-            value="TSLA",
+            value=default_ticker,
             help="Enter a stock ticker symbol (e.g., AAPL, MSFT, GOOGL)",
         ).upper()
 

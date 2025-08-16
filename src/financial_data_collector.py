@@ -5,8 +5,9 @@ import json
 from datetime import datetime, timedelta
 import time
 import os
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import logging
+import difflib
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +56,109 @@ class FinancialDataCollector:
                 )
             except Exception as e:
                 logger.warning(f"Reddit API initialization failed: {e}")
+                
+        # Common valid tickers for suggestion system
+        self.common_tickers = [
+            "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFLX", "ADBE", "CRM",
+            "ORCL", "INTC", "AMD", "PYPL", "ZOOM", "UBER", "LYFT", "SNAP", "TWTR", "SPOT",
+            "JPM", "BAC", "WFC", "GS", "MS", "C", "BRK.B", "V", "MA", "AXP",
+            "JNJ", "PFE", "MRNA", "UNH", "CVS", "ABBV", "TMO", "DHR", "GILD", "AMGN",
+            "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "HD", "WMT", "TGT", "COST",
+            "XOM", "CVX", "COP", "EOG", "SLB", "HAL", "OXY", "DVN", "MRO", "APA",
+            "BA", "LMT", "RTX", "NOC", "GD", "CAT", "DE", "HON", "MMM", "GE",
+            "SPY", "QQQ", "IWM", "VTI", "VOO", "VEA", "VWO", "BND", "AGG", "TLT"
+        ]
+
+    def validate_ticker(self, ticker: str) -> Tuple[bool, str, List[str]]:
+        """
+        Validate if a ticker symbol exists and is tradeable
+        
+        Returns:
+            Tuple[bool, str, List[str]]: (is_valid, error_message, suggestions)
+        """
+        if not ticker or not isinstance(ticker, str):
+            return False, "Ticker must be a non-empty string", []
+            
+        ticker = ticker.upper().strip()
+        
+        # Basic format validation
+        if len(ticker) < 1 or len(ticker) > 10:
+            suggestions = self._get_ticker_suggestions(ticker)
+            return False, f"Invalid ticker format: '{ticker}'. Ticker should be 1-10 characters.", suggestions
+            
+        # Check for invalid characters
+        if not ticker.replace('.', '').replace('-', '').isalnum():
+            suggestions = self._get_ticker_suggestions(ticker)
+            return False, f"Invalid characters in ticker: '{ticker}'. Use only letters, numbers, dots, and hyphens.", suggestions
+        
+        # Quick validation using yfinance
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            # Check if we got valid data
+            if not info or len(info) < 5:
+                suggestions = self._get_ticker_suggestions(ticker)
+                return False, f"Ticker '{ticker}' not found or no data available.", suggestions
+                
+            # Check if it's a valid tradeable security
+            if info.get('regularMarketPrice') is None and info.get('currentPrice') is None:
+                suggestions = self._get_ticker_suggestions(ticker)
+                return False, f"Ticker '{ticker}' exists but appears to be non-tradeable or delisted.", suggestions
+                
+            # Check if company name exists (good indicator of validity)
+            if not info.get('longName') and not info.get('shortName'):
+                suggestions = self._get_ticker_suggestions(ticker)
+                return False, f"Ticker '{ticker}' may be invalid - no company name found.", suggestions
+                
+            return True, f"Ticker '{ticker}' is valid", []
+            
+        except Exception as e:
+            logger.warning(f"Error validating ticker {ticker}: {e}")
+            suggestions = self._get_ticker_suggestions(ticker)
+            return False, f"Failed to validate ticker '{ticker}': {str(e)}", suggestions
+
+    def _get_ticker_suggestions(self, invalid_ticker: str, max_suggestions: int = 5) -> List[str]:
+        """
+        Get suggested tickers based on the invalid input
+        
+        Args:
+            invalid_ticker: The invalid ticker string
+            max_suggestions: Maximum number of suggestions to return
+            
+        Returns:
+            List of suggested ticker symbols
+        """
+        if not invalid_ticker:
+            return ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+            
+        invalid_ticker = invalid_ticker.upper().strip()
+        suggestions = []
+        
+        # Use difflib to find close matches
+        close_matches = difflib.get_close_matches(
+            invalid_ticker, 
+            self.common_tickers, 
+            n=max_suggestions, 
+            cutoff=0.3
+        )
+        suggestions.extend(close_matches)
+        
+        # If no close matches, try substring matching
+        if len(suggestions) < max_suggestions:
+            substring_matches = [
+                ticker for ticker in self.common_tickers 
+                if invalid_ticker in ticker or ticker in invalid_ticker
+            ]
+            for match in substring_matches[:max_suggestions - len(suggestions)]:
+                if match not in suggestions:
+                    suggestions.append(match)
+        
+        # If still no matches, provide popular defaults
+        if not suggestions:
+            suggestions = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"][:max_suggestions]
+            
+        return suggestions
 
     def get_yahoo_finance_data(self, ticker: str, period: str = "1y") -> Dict[str, Any]:
         """Get comprehensive stock data from Yahoo Finance"""

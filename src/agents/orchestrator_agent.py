@@ -486,10 +486,46 @@ class InvestmentResearchOrchestrator:
 
         try:
             self._update_progress(f"Starting research for {ticker} ({company_name})", 0)
+            
+            # Step 0: Validate ticker before proceeding
+            self._update_progress(f"Validating ticker {ticker}...", 2)
+            
+            is_valid, error_message, suggestions = self.data_collector.validate_ticker(ticker)
+            if not is_valid:
+                error_details = {
+                    "error_type": "invalid_ticker",
+                    "ticker": ticker,
+                    "error_message": error_message,
+                    "suggestions": suggestions,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                self.logger.error(f"Invalid ticker {ticker}: {error_message}")
+                self.logger.info(f"Suggested alternatives: {suggestions}")
+                
+                # Store failed execution in history
+                self.execution_history.append(
+                    {
+                        "ticker": ticker,
+                        "timestamp": datetime.now().isoformat(),
+                        "execution_time": time.time() - research_start_time,
+                        "success": False,
+                        "error": f"Invalid ticker: {error_message}",
+                        "error_type": "invalid_ticker",
+                        "suggestions": suggestions
+                    }
+                )
+                
+                raise ValueError(
+                    f"Invalid ticker '{ticker}': {error_message}. "
+                    f"Suggested alternatives: {', '.join(suggestions[:3])}"
+                )
+            
+            self._update_progress(f"Ticker {ticker} validated successfully", 5)
 
-            # Task 1: Data Collection (0-30%)
+            # Task 1: Data Collection (5-30%)
             self._update_progress(
-                "Collecting financial data from multiple sources...", 5
+                "Collecting financial data from multiple sources...", 10
             )
             data_task = await self._execute_task_with_retry(
                 "data_collection", self._collect_company_data, ticker, company_name
