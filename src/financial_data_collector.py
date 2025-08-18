@@ -602,12 +602,37 @@ class FinancialDataCollector:
             "alpha_vantage_metrics": raw_data["data_sources"].get("alpha_vantage", {}),
         }
 
+        # Process and combine news articles from different sources
+        news_articles = []
+        
+        # Process regular news articles
+        regular_news = raw_data["data_sources"].get("news", [])
+        for article in regular_news:
+            if isinstance(article, dict) and (article.get('title') or article.get('description')):
+                news_articles.append(article)
+        
+        # Process Yahoo news articles (different structure)
+        yahoo_news_raw = raw_data["data_sources"].get("yahoo_finance", {}).get("news", [])
+        for item in yahoo_news_raw:
+            if isinstance(item, dict) and 'content' in item:
+                content = item['content']
+                processed_article = {
+                    'title': content.get('title', ''),
+                    'description': content.get('description', ''),
+                    'summary': content.get('summary', ''),
+                    'url': content.get('canonicalUrl', {}).get('url', ''),
+                    'published_at': content.get('pubDate', ''),
+                    'source': content.get('provider', {}).get('displayName', 'Yahoo Finance'),
+                    'provider': 'Yahoo Finance',
+                    'type': 'yahoo_finance_processed',
+                    'content_type': content.get('contentType', ''),
+                    'original_id': item.get('id', '')
+                }
+                news_articles.append(processed_article)
+        
         unstructured_data = {
-            "news_articles": raw_data["data_sources"].get("news", []),
+            "news_articles": news_articles,
             "reddit_sentiment": raw_data["data_sources"].get("reddit_sentiment", {}),
-            "yahoo_news": raw_data["data_sources"]
-            .get("yahoo_finance", {})
-            .get("news", []),
         }
 
         return {

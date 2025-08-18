@@ -103,17 +103,32 @@ class VectorDataManager:
             logger.info(f"Processing {len(news_articles)} news articles")
             
             for i, article in enumerate(news_articles):
-                # Skip articles without essential content
-                if not article.get('title') or not article.get('description'):
-                    logger.warning(f"Skipping article {i}: missing title or description")
+                # More flexible validation - require at least title OR description
+                title = article.get('title', '').strip()
+                description = article.get('description', '').strip()
+                summary = article.get('summary', '').strip()
+                content = article.get('content', '').strip()
+                
+                # Try to find any usable content
+                usable_content = description or summary or content or ''
+                
+                if not title and not usable_content:
+                    logger.warning(f"Skipping article {i}: no usable content found")
                     continue
                 
-                # Combine title and description for richer content
-                # This gives the LLM more context to work with
-                text_content = f"TITLE: {article['title']}\n\nCONTENT: {article['description']}"
+                # Use title as fallback content if description is missing
+                if not usable_content and title:
+                    usable_content = title
+                
+                # Use description as fallback title if title is missing
+                if not title and usable_content:
+                    title = usable_content[:100] + "..." if len(usable_content) > 100 else usable_content
+                
+                # Combine title and content for richer context
+                text_content = f"TITLE: {title}\n\nCONTENT: {usable_content}"
                 
                 # Generate unique document ID
-                doc_id = self._generate_doc_id(ticker, 'news', i, article.get('title', ''))
+                doc_id = self._generate_doc_id(ticker, 'news', i, title)
                 
                 # Prepare metadata (information about the document)
                 metadata = {
@@ -124,8 +139,11 @@ class VectorDataManager:
                     'url': article.get('url', ''),
                     'published_at': article.get('published_at', ''),
                     'stored_at': datetime.now().isoformat(),
-                    'title': article.get('title', '')[:100],  # Truncate for metadata
-                    'article_index': i
+                    'title': title[:100],  # Use processed title
+                    'article_index': i,
+                    'content_length': len(usable_content),
+                    'has_description': bool(description),
+                    'content_source': 'description' if description else 'summary' if summary else 'content' if content else 'title'
                 }
                 
                 # Add to batch
@@ -143,18 +161,27 @@ class VectorDataManager:
             logger.info(f"Processing {len(sample_posts)} Reddit posts with overall sentiment: {overall_sentiment}")
             
             for i, post in enumerate(sample_posts):
-                # Skip posts without content
-                if not post.get('title'):
-                    logger.warning(f"Skipping Reddit post {i}: missing title")
+                # More flexible Reddit post validation
+                title = post.get('title', '').strip()
+                selftext = post.get('selftext', '').strip()
+                body = post.get('body', '').strip()
+                
+                # Use any available text content
+                post_content = selftext or body or ''
+                
+                if not title and not post_content:
+                    logger.warning(f"Skipping Reddit post {i}: no usable content")
                     continue
                 
-                # Combine title and self-text for full context
-                # Add sentiment context to help with analysis
-                post_text = post.get('selftext', '')
-                text_content = f"REDDIT POST: {post['title']}\n\nCONTENT: {post_text}\n\nOVERALL_SENTIMENT: {overall_sentiment}"
+                # Use title as content fallback if no post text
+                if not post_content and title:
+                    post_content = title
+                
+                # Combine title and content for full context
+                text_content = f"REDDIT POST: {title}\n\nCONTENT: {post_content}\n\nOVERALL_SENTIMENT: {overall_sentiment}"
                 
                 # Generate unique document ID  
-                doc_id = self._generate_doc_id(ticker, 'reddit', i, post.get('title', ''))
+                doc_id = self._generate_doc_id(ticker, 'reddit', i, title)
                 
                 # Prepare metadata
                 metadata = {
@@ -166,8 +193,11 @@ class VectorDataManager:
                     'overall_sentiment': overall_sentiment,
                     'post_sentiment_score': reddit_data.get('sentiment_score', 0),
                     'stored_at': datetime.now().isoformat(),
-                    'title': post.get('title', '')[:100],  # Truncate for metadata
-                    'post_index': i
+                    'title': title[:100],  # Use processed title
+                    'post_index': i,
+                    'content_length': len(post_content),
+                    'has_selftext': bool(selftext),
+                    'content_source': 'selftext' if selftext else 'body' if body else 'title'
                 }
                 
                 # Add to batch
