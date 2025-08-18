@@ -3,13 +3,21 @@ Vector Manager - Detailed implementation with explanations
 Handles storage and retrieval of unstructured financial data
 """
 
-import chromadb
 import os
 import logging
 from typing import Dict, List, Any
 from datetime import datetime
 import hashlib
 import json
+
+# Handle ChromaDB import with fallback for deployment environments
+try:
+    import chromadb
+    CHROMADB_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    CHROMADB_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"ChromaDB not available: {e}. Using in-memory storage fallback.")
 
 logger = logging.getLogger(__name__)
 
@@ -20,35 +28,50 @@ class VectorDataManager:
     What this does:
     1. Takes news articles and social posts (text)
     2. Converts them to mathematical vectors (embeddings)
-    3. Stores vectors in ChromaDB for fast similarity search
+    3. Stores vectors in ChromaDB for fast similarity search (or in-memory fallback)
     4. Enables semantic search (meaning-based, not keyword-based)
     """
     
     def __init__(self, data_dir: str = "data/vector_db"):
         """
-        Initialize the vector database
+        Initialize the vector database with fallback support
         
         Args:
             data_dir: Where to store the database files
         """
         self.data_dir = data_dir
+        self.use_chromadb = CHROMADB_AVAILABLE
         
-        # Create directory if it doesn't exist
-        os.makedirs(data_dir, exist_ok=True)
-        
-        # Initialize ChromaDB with persistent storage
-        # This means data survives app restarts
-        self.client = chromadb.PersistentClient(path=data_dir)
-        
-        # Create or get existing collection
-        # Think of collection as a "table" for financial documents
-        self.collection = self.client.get_or_create_collection(
-            name="financial_documents",
-            metadata={"description": "Financial news articles and social sentiment data"}
-        )
-        
-        logger.info(f"Vector database initialized at {data_dir}")
-        logger.info(f"Current collection has {self.collection.count()} documents")
+        if self.use_chromadb:
+            # ChromaDB is available - use persistent storage
+            os.makedirs(data_dir, exist_ok=True)
+            
+            try:
+                # Try persistent client first
+                self.client = chromadb.PersistentClient(path=data_dir)
+            except Exception as e:
+                logger.warning(f"Failed to create persistent client: {e}. Using in-memory client.")
+                # Fallback to in-memory client
+                self.client = chromadb.EphemeralClient()
+                self.use_chromadb = "memory"
+            
+            # Create or get existing collection
+            self.collection = self.client.get_or_create_collection(
+                name="financial_documents",
+                metadata={"description": "Financial news articles and social sentiment data"}
+            )
+            
+            logger.info(f"Vector database initialized with ChromaDB ({self.use_chromadb})")
+        else:
+            # ChromaDB not available - use simple in-memory storage
+            self.documents = []
+            self.metadata = []
+            self.ids = []
+            logger.info("Vector database initialized with in-memory fallback storage")
+        if self.use_chromadb:
+            logger.info(f"Current collection has {self.collection.count()} documents")
+        else:
+            logger.info(f"Current in-memory storage has {len(self.documents)} documents")
     
     def store_unstructured_data(self, ticker: str, unstructured_data: Dict[str, Any]) -> bool:
         """
@@ -154,20 +177,26 @@ class VectorDataManager:
                 
                 logger.debug(f"Prepared Reddit post {i}: {post.get('title', '')[:50]}...")
             
-            # ================== STORE IN CHROMADB ==================
+            # ================== STORE IN DATABASE ==================
             if documents:
                 logger.info(f"Storing {len(documents)} documents in vector database...")
                 
-                # This is where the magic happens:
-                # ChromaDB automatically converts text to vectors using embeddings
-                self.collection.add(
-                    documents=documents,    # Text content (gets converted to vectors)
-                    metadatas=metadatas,   # Information about each document
-                    ids=ids                # Unique identifiers
-                )
+                if self.use_chromadb:
+                    # ChromaDB automatically converts text to vectors using embeddings
+                    self.collection.add(
+                        documents=documents,    # Text content (gets converted to vectors)
+                        metadatas=metadatas,   # Information about each document
+                        ids=ids                # Unique identifiers
+                    )
+                    logger.info(f"Collection now has {self.collection.count()} total documents")
+                else:
+                    # Fallback to in-memory storage
+                    self.documents.extend(documents)
+                    self.metadata.extend(metadatas)
+                    self.ids.extend(ids)
+                    logger.info(f"In-memory storage now has {len(self.documents)} total documents")
                 
                 logger.info(f"Successfully stored {len(documents)} documents for {ticker}")
-                logger.info(f"Collection now has {self.collection.count()} total documents")
                 return True
             else:
                 logger.warning(f"No valid documents found to store for {ticker}")
@@ -198,47 +227,85 @@ class VectorDataManager:
         try:
             logger.info(f"Searching for: '{query}' (ticker: {ticker}, type: {doc_type}, limit: {limit})")
             
-            # Build filter criteria
-            where_filter = {}
-            if ticker:
-                where_filter['ticker'] = ticker
-            if doc_type:
-                where_filter['type'] = doc_type
-            
-            # Perform semantic similarity search
-            # ChromaDB converts query to vector and finds most similar documents
-            results = self.collection.query(
-                query_texts=[query],                    # Text to search for
-                n_results=limit,                       # Number of results
-                where=where_filter if where_filter else None,  # Filter criteria
-                include=['documents', 'metadatas', 'distances']  # What to return
-            )
-            
-            # Format results for easier use
-            formatted_results = []
-            
-            if results['documents'] and results['documents'][0]:
-                num_results = len(results['documents'][0])
-                logger.info(f"Found {num_results} matching documents")
+            if self.use_chromadb:
+                # Build filter criteria
+                where_filter = {}
+                if ticker:
+                    where_filter['ticker'] = ticker
+                if doc_type:
+                    where_filter['type'] = doc_type
                 
-                for i in range(num_results):
-                    result_item = {
-                        'document': results['documents'][0][i],      # The actual text content
-                        'metadata': results['metadatas'][0][i],      # Document information
-                        'similarity_score': 1 - results['distances'][0][i],  # Higher = more similar
-                        'distance': results['distances'][0][i],      # Lower = more similar
-                        'id': results['ids'][0][i],                  # Unique document ID
-                        'relevance': self._calculate_relevance_score(results['distances'][0][i])
-                    }
-                    formatted_results.append(result_item)
+                # Perform semantic similarity search
+                # ChromaDB converts query to vector and finds most similar documents
+                results = self.collection.query(
+                    query_texts=[query],                    # Text to search for
+                    n_results=limit,                       # Number of results
+                    where=where_filter if where_filter else None,  # Filter criteria
+                    include=['documents', 'metadatas', 'distances']  # What to return
+                )
+                
+                # Format results for easier use
+                formatted_results = []
+                
+                if results['documents'] and results['documents'][0]:
+                    num_results = len(results['documents'][0])
+                    logger.info(f"Found {num_results} matching documents")
                     
-                    # Log top results for debugging
-                    if i < 3:  # Log first 3 results
-                        logger.debug(f"Result {i+1}: {result_item['metadata'].get('title', 'No title')[:50]}... (similarity: {result_item['similarity_score']:.3f})")
+                    for i in range(num_results):
+                        result_item = {
+                            'document': results['documents'][0][i],      # The actual text content
+                            'metadata': results['metadatas'][0][i],      # Document information
+                            'similarity_score': 1 - results['distances'][0][i],  # Higher = more similar
+                            'distance': results['distances'][0][i],      # Lower = more similar
+                            'id': results['ids'][0][i],                  # Unique document ID
+                            'relevance': self._calculate_relevance_score(results['distances'][0][i])
+                        }
+                        formatted_results.append(result_item)
+                        
+                        # Log top results for debugging
+                        if i < 3:  # Log first 3 results
+                            logger.debug(f"Result {i+1}: {result_item['metadata'].get('title', 'No title')[:50]}... (similarity: {result_item['similarity_score']:.3f})")
+                else:
+                    logger.info("No matching documents found")
+                    
+                return formatted_results
             else:
-                logger.info("No matching documents found")
-            
-            return formatted_results
+                # Fallback: Simple text search in in-memory storage
+                formatted_results = []
+                query_lower = query.lower()
+                
+                for i, (doc, meta, doc_id) in enumerate(zip(self.documents, self.metadata, self.ids)):
+                    # Apply filters
+                    if ticker and meta.get('ticker') != ticker:
+                        continue
+                    if doc_type and meta.get('type') != doc_type:
+                        continue
+                    
+                    # Simple text similarity (count matching words)
+                    doc_lower = doc.lower()
+                    query_words = query_lower.split()
+                    matches = sum(1 for word in query_words if word in doc_lower)
+                    
+                    if matches > 0:
+                        # Simple relevance score based on word matches
+                        relevance_score = matches / len(query_words)
+                        
+                        result_item = {
+                            'document': doc,
+                            'metadata': meta,
+                            'similarity_score': relevance_score,
+                            'distance': 1 - relevance_score,
+                            'id': doc_id,
+                            'relevance': self._calculate_relevance_score(1 - relevance_score)
+                        }
+                        formatted_results.append(result_item)
+                
+                # Sort by relevance score (highest first)
+                formatted_results.sort(key=lambda x: x['similarity_score'], reverse=True)
+                formatted_results = formatted_results[:limit]
+                
+                logger.info(f"Found {len(formatted_results)} matching documents (fallback search)")
+                return formatted_results
             
         except Exception as e:
             logger.error(f"Error searching documents: {e}")
@@ -264,33 +331,56 @@ class VectorDataManager:
         try:
             logger.info(f"Retrieving documents for {ticker} (type: {doc_type}, limit: {limit})")
             
-            # Build filter
-            where_filter = {'ticker': ticker}
-            if doc_type:
-                where_filter['type'] = doc_type
-            
-            # Get documents (no similarity search, just filtering)
-            results = self.collection.get(
-                where=where_filter,
-                limit=limit,
-                include=['documents', 'metadatas']
-            )
-            
-            # Format results
-            formatted_results = []
-            if results['documents']:
-                for i in range(len(results['documents'])):
-                    formatted_results.append({
-                        'document': results['documents'][i],
-                        'metadata': results['metadatas'][i],
-                        'id': results['ids'][i]
-                    })
+            if self.use_chromadb:
+                # Build filter
+                where_filter = {'ticker': ticker}
+                if doc_type:
+                    where_filter['type'] = doc_type
                 
-                logger.info(f"Retrieved {len(formatted_results)} documents for {ticker}")
+                # Get documents (no similarity search, just filtering)
+                results = self.collection.get(
+                    where=where_filter,
+                    limit=limit,
+                    include=['documents', 'metadatas']
+                )
+                
+                # Format results
+                formatted_results = []
+                if results['documents']:
+                    for i in range(len(results['documents'])):
+                        formatted_results.append({
+                            'document': results['documents'][i],
+                            'metadata': results['metadatas'][i],
+                            'id': results['ids'][i]
+                        })
+                    
+                    logger.info(f"Retrieved {len(formatted_results)} documents for {ticker}")
+                else:
+                    logger.info(f"No documents found for {ticker}")
+                    
+                return formatted_results
             else:
-                logger.info(f"No documents found for {ticker}")
-            
-            return formatted_results
+                # Fallback: Filter in-memory storage
+                formatted_results = []
+                
+                for doc, meta, doc_id in zip(self.documents, self.metadata, self.ids):
+                    # Apply filters
+                    if meta.get('ticker') != ticker:
+                        continue
+                    if doc_type and meta.get('type') != doc_type:
+                        continue
+                    
+                    formatted_results.append({
+                        'document': doc,
+                        'metadata': meta,
+                        'id': doc_id
+                    })
+                    
+                    if len(formatted_results) >= limit:
+                        break
+                
+                logger.info(f"Retrieved {len(formatted_results)} documents for {ticker} (fallback storage)")
+                return formatted_results
             
         except Exception as e:
             logger.error(f"Error getting documents for {ticker}: {e}")
@@ -447,34 +537,63 @@ class VectorDataManager:
         - Debugging issues
         """
         try:
-            collection_count = self.collection.count()
-            
-            # Get sample of documents to analyze distribution
-            sample_docs = self.collection.get(limit=100, include=['metadatas'])
-            
-            # Count by ticker and type
-            ticker_counts = {}
-            type_counts = {'news': 0, 'reddit': 0, 'other': 0}
-            
-            if sample_docs['metadatas']:
-                for metadata in sample_docs['metadatas']:
+            if self.use_chromadb:
+                collection_count = self.collection.count()
+                
+                # Get sample of documents to analyze distribution
+                sample_docs = self.collection.get(limit=100, include=['metadatas'])
+                
+                # Count by ticker and type
+                ticker_counts = {}
+                type_counts = {'news': 0, 'reddit': 0, 'other': 0}
+                
+                if sample_docs['metadatas']:
+                    for metadata in sample_docs['metadatas']:
+                        ticker = metadata.get('ticker', 'unknown')
+                        doc_type = metadata.get('type', 'other')
+                        
+                        ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
+                        type_counts[doc_type] = type_counts.get(doc_type, 0) + 1
+                
+                stats = {
+                    'total_documents': collection_count,
+                    'collection_name': self.collection.name,
+                    'database_path': self.data_dir,
+                    'document_types': type_counts,
+                    'top_tickers': dict(sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
+                    'last_updated': datetime.now().isoformat(),
+                    'storage_type': 'chromadb'
+                }
+                
+                logger.info(f"Collection stats: {collection_count} total documents")
+                return stats
+            else:
+                # Fallback: Analyze in-memory storage
+                collection_count = len(self.documents)
+                
+                # Count by ticker and type
+                ticker_counts = {}
+                type_counts = {'news': 0, 'reddit': 0, 'other': 0}
+                
+                for metadata in self.metadata:
                     ticker = metadata.get('ticker', 'unknown')
                     doc_type = metadata.get('type', 'other')
                     
                     ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
                     type_counts[doc_type] = type_counts.get(doc_type, 0) + 1
-            
-            stats = {
-                'total_documents': collection_count,
-                'collection_name': self.collection.name,
-                'database_path': self.data_dir,
-                'document_types': type_counts,
-                'top_tickers': dict(sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
-                'last_updated': datetime.now().isoformat()
-            }
-            
-            logger.info(f"Collection stats: {collection_count} total documents")
-            return stats
+                
+                stats = {
+                    'total_documents': collection_count,
+                    'collection_name': 'in_memory_fallback',
+                    'database_path': 'memory',
+                    'document_types': type_counts,
+                    'top_tickers': dict(sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
+                    'last_updated': datetime.now().isoformat(),
+                    'storage_type': 'in_memory_fallback'
+                }
+                
+                logger.info(f"In-memory storage stats: {collection_count} total documents")
+                return stats
             
         except Exception as e:
             logger.error(f"Error getting collection stats: {e}")
@@ -492,19 +611,39 @@ class VectorDataManager:
         try:
             logger.info(f"Clearing all data for ticker: {ticker}")
             
-            # Get all document IDs for this ticker
-            results = self.collection.get(
-                where={'ticker': ticker},
-                include=['ids']
-            )
-            
-            if results['ids']:
-                # Delete all documents for this ticker
-                self.collection.delete(ids=results['ids'])
-                logger.info(f"Deleted {len(results['ids'])} documents for {ticker}")
-                return True
+            if self.use_chromadb:
+                # Get all document IDs for this ticker
+                results = self.collection.get(
+                    where={'ticker': ticker},
+                    include=['ids']
+                )
+                
+                if results['ids']:
+                    # Delete all documents for this ticker
+                    self.collection.delete(ids=results['ids'])
+                    logger.info(f"Deleted {len(results['ids'])} documents for {ticker}")
+                    return True
+                else:
+                    logger.info(f"No documents found for {ticker}")
+                    return True
             else:
-                logger.info(f"No documents found for {ticker}")
+                # Fallback: Remove from in-memory storage
+                initial_count = len(self.documents)
+                
+                # Find indices to remove
+                indices_to_remove = []
+                for i, meta in enumerate(self.metadata):
+                    if meta.get('ticker') == ticker:
+                        indices_to_remove.append(i)
+                
+                # Remove in reverse order to maintain indices
+                for i in reversed(indices_to_remove):
+                    del self.documents[i]
+                    del self.metadata[i]
+                    del self.ids[i]
+                
+                removed_count = len(indices_to_remove)
+                logger.info(f"Deleted {removed_count} documents for {ticker} from in-memory storage")
                 return True
                 
         except Exception as e:
