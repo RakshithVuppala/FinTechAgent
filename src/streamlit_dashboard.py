@@ -137,6 +137,7 @@ def check_api_status():
     if not github_api_key:
         github_api_key = st.secrets.get("api_keys", {}).get("GITHUB_AI_API_KEY")
     
+    # Check if GitHub AI API key is configured and valid
     if github_api_key and github_api_key != "your_github_ai_api_key_here" and github_api_key.strip():
         try:
             from openai import OpenAI
@@ -144,8 +145,11 @@ def check_api_status():
                 base_url="https://models.github.ai/inference",
                 api_key=github_api_key,
             )
-            # Try a simple test call
-            response = client.models.list()
+            # Use exact same test as your working code
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "test"}]
+            )
             api_status["github_ai"] = {"status": "configured", "message": "GitHub AI API working"}
         except Exception as e:
             api_status["github_ai"] = {"status": "error", "message": f"GitHub AI error: {str(e)[:50]}..."}
@@ -193,13 +197,13 @@ def check_llm_availability():
     """Check if LLM is available for use"""
     api_status = check_api_status()
     
-    # Check GitHub AI first
-    if api_status["github_ai"]["status"] == "configured":
-        return True, "GitHub AI API ready"
-    
-    # Fallback to OpenAI
+    # Check OpenAI first (more reliable)
     if api_status["openai"]["status"] == "configured":
         return True, "OpenAI API ready"
+    
+    # Fallback to GitHub AI
+    if api_status["github_ai"]["status"] == "configured":
+        return True, "GitHub AI API ready"
     
     # No LLM available
     return False, "No LLM API keys configured"
@@ -211,9 +215,12 @@ def initialize_session_state():
         st.session_state.research_data = None
     if "research_history" not in st.session_state:
         st.session_state.research_history = []
-    if "llm_status" not in st.session_state:
-        is_available, status_msg = check_llm_availability()
-        st.session_state.llm_status = {"available": is_available, "message": status_msg}
+    # Always check LLM status fresh (don't cache potentially stale results)
+    is_available, status_msg = check_llm_availability()
+    st.session_state.llm_status = {"available": is_available, "message": status_msg}
+    
+    # DEBUG: Show what we're getting
+    st.sidebar.info(f"🔍 DEBUG: LLM Check Result = {is_available}, Message = {status_msg}")
 
     # Initialize data managers with session state persistence
     if "structured_manager" not in st.session_state:

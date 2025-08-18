@@ -37,10 +37,19 @@ class EnhancedFinancialAnalysisAgent:
         self.llm_client = None
         if self.use_llm:
             try:
-                self.llm_client = OpenAI(
-                    base_url="https://models.github.ai/inference",
-                    api_key=os.getenv("GITHUB_AI_API_KEY"),
-                )
+                # Try OpenAI first, then GitHub AI as fallback
+                openai_key = os.getenv("OPENAI_API_KEY")
+                github_key = os.getenv("GITHUB_AI_API_KEY")
+                
+                if openai_key and openai_key != "your_openai_api_key_here":
+                    self.llm_client = OpenAI(api_key=openai_key)
+                elif github_key and github_key != "your_github_ai_api_key_here":
+                    self.llm_client = OpenAI(
+                        base_url="https://models.github.ai/inference",
+                        api_key=github_key,
+                    )
+                else:
+                    raise ValueError("No valid API key found")
                 logger.info("LLM client initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize LLM client: {e}")
