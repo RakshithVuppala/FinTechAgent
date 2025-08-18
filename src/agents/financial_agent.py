@@ -133,7 +133,7 @@ Keep your response concise and professional. Focus on actionable insights for in
 
             # Make LLM call
             response = self.llm_client.chat.completions.create(
-                model="openai/gpt-5",  # GPT-5 model for enhanced analysis
+                model="gpt-4o",  # GPT-4o model for enhanced analysis
                 messages=[
                     {
                         "role": "system",
@@ -151,7 +151,7 @@ Keep your response concise and professional. Focus on actionable insights for in
             return {
                 "detailed_analysis": llm_analysis,
                 "analysis_timestamp": "2024-01-01",  # You'd use real timestamp
-                "model_used": "openai/gpt-5",
+                "model_used": "gpt-4o",
                 "analysis_type": "financial_fundamentals",
             }
 
@@ -189,7 +189,7 @@ Be specific and actionable. Limit to 300 words.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="openai/gpt-5",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
@@ -207,7 +207,7 @@ Be specific and actionable. Limit to 300 words.
                 "recommendation_text": recommendation,
                 "generated_at": "2024-01-01",  # Real timestamp
                 "confidence_level": "High",  # Could be calculated
-                "model_used": "openai/gpt-5",
+                "model_used": "gpt-4o",
             }
 
         except Exception as e:

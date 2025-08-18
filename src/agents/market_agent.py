@@ -167,7 +167,7 @@ Keep response concise and actionable. Focus specifically on {focus_area}.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="openai/gpt-5",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": f"You are a market intelligence analyst specializing in {focus_area} analysis."},
                     {"role": "user", "content": prompt}
@@ -183,7 +183,7 @@ Keep response concise and actionable. Focus specifically on {focus_area}.
                 'confidence': self._calculate_confidence(documents),
                 'source_count': len(documents),
                 'sources_used': source_info,
-                'model_used': 'openai/gpt-5'
+                'model_used': 'gpt-4o'
             }
             
         except Exception as e:
@@ -294,7 +294,7 @@ Keep response concise and actionable for investment decisions.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="openai/gpt-5",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a senior market analyst providing overall market assessment."},
                     {"role": "user", "content": prompt}
