@@ -131,16 +131,22 @@ def check_api_status():
     """Check status of all API configurations"""
     api_status = {}
     
-    # GitHub AI API
+    # GitHub AI API  
     github_api_key = os.getenv("GITHUB_AI_API_KEY")
-    if github_api_key and github_api_key != "your_github_ai_api_key_here":
+    # Also check Streamlit secrets format
+    if not github_api_key:
+        github_api_key = st.secrets.get("api_keys", {}).get("GITHUB_AI_API_KEY")
+    
+    if github_api_key and github_api_key != "your_github_ai_api_key_here" and github_api_key.strip():
         try:
             from openai import OpenAI
             client = OpenAI(
                 base_url="https://models.github.ai/inference",
                 api_key=github_api_key,
             )
-            api_status["github_ai"] = {"status": "configured", "message": "GitHub AI API configured"}
+            # Try a simple test call
+            response = client.models.list()
+            api_status["github_ai"] = {"status": "configured", "message": "GitHub AI API working"}
         except Exception as e:
             api_status["github_ai"] = {"status": "error", "message": f"GitHub AI error: {str(e)[:50]}..."}
     else:
@@ -148,14 +154,25 @@ def check_api_status():
     
     # OpenAI API (alternative)
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key and openai_api_key != "your_openai_api_key_here":
-        api_status["openai"] = {"status": "configured", "message": "OpenAI API configured"}
+    if not openai_api_key:
+        openai_api_key = st.secrets.get("api_keys", {}).get("OPENAI_API_KEY")
+        
+    if openai_api_key and openai_api_key != "your_openai_api_key_here" and openai_api_key.strip():
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+            # Try a simple test call
+            response = client.models.list()
+            api_status["openai"] = {"status": "configured", "message": "OpenAI API working"}
+        except Exception as e:
+            api_status["openai"] = {"status": "error", "message": f"OpenAI error: {str(e)[:50]}..."}
     else:
         api_status["openai"] = {"status": "missing", "message": "OpenAI API key not configured"}
     
     # Reddit API
-    reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
-    reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    reddit_client_id = os.getenv("REDDIT_CLIENT_ID") or st.secrets.get("api_keys", {}).get("REDDIT_CLIENT_ID")
+    reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET") or st.secrets.get("api_keys", {}).get("REDDIT_CLIENT_SECRET")
+    
     if (reddit_client_id and reddit_client_id != "your_reddit_client_id_here" and 
         reddit_client_secret and reddit_client_secret != "your_reddit_client_secret_here"):
         api_status["reddit"] = {"status": "configured", "message": "Reddit API configured"}
@@ -163,7 +180,7 @@ def check_api_status():
         api_status["reddit"] = {"status": "missing", "message": "Reddit API not configured"}
     
     # Alpha Vantage API
-    alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY") or st.secrets.get("api_keys", {}).get("ALPHA_VANTAGE_API_KEY")
     if alpha_vantage_key and alpha_vantage_key != "your_alpha_vantage_api_key_here":
         api_status["alpha_vantage"] = {"status": "configured", "message": "Alpha Vantage API configured"}
     else:
@@ -544,9 +561,16 @@ async def run_research_pipeline_orchestrated(ticker, company_name):
         total_time = results["research_metadata"]["total_execution_time"]
         cache_used = results["research_metadata"]["cache_used"]
 
-        success_message = f"✅ Analysis completed in {total_time:.1f} seconds"
-        if cache_used:
-            success_message += " (using cached data for optimal speed)"
+        # Debug: Show more execution details
+        if total_time == 0:
+            if cache_used:
+                success_message = f"✅ Analysis completed instantly (cached results)"
+            else:
+                success_message = f"✅ Analysis completed (execution time not recorded)"
+        else:
+            success_message = f"✅ Analysis completed in {total_time:.1f} seconds"
+            if cache_used:
+                success_message += " (using cached data for optimal speed)"
 
         st.success(success_message)
 
@@ -1366,6 +1390,22 @@ def main():
             index=0,
             help="Orchestrator provides better performance, caching, and error handling",
         )
+        
+        # Debug options
+        if st.checkbox("🔧 Debug Options", help="Show debugging options"):
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Clear All Cache", help="Force fresh analysis"):
+                    if "orchestrator" in st.session_state:
+                        st.session_state.orchestrator.clear_cache()
+                        st.success("Cache cleared!")
+                        st.rerun()
+            with col2:
+                if st.button("🔄 Reset LLM Status", help="Re-check API status"):
+                    if hasattr(st.session_state, 'llm_status'):
+                        del st.session_state.llm_status
+                    st.success("LLM status reset!")
+                    st.rerun()
 
         # Research button
         research_button = st.button(
