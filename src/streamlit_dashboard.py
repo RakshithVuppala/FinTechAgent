@@ -127,30 +127,65 @@ st.markdown(
 )
 
 
-def check_llm_availability():
-    """Check if LLM is available for use"""
-    try:
-        from openai import OpenAI
-
-        openai_available = True
-
-        # Check if API key is configured
-        api_key = os.getenv("GITHUB_AI_API_KEY")
-        if not api_key:
-            return False, "API key not configured"
-
-        # Try to initialize client
+def check_api_status():
+    """Check status of all API configurations"""
+    api_status = {}
+    
+    # GitHub AI API
+    github_api_key = os.getenv("GITHUB_AI_API_KEY")
+    if github_api_key and github_api_key != "your_github_ai_api_key_here":
         try:
+            from openai import OpenAI
             client = OpenAI(
                 base_url="https://models.github.ai/inference",
-                api_key=api_key,
+                api_key=github_api_key,
             )
-            return True, "LLM ready and configured"
+            api_status["github_ai"] = {"status": "configured", "message": "GitHub AI API configured"}
         except Exception as e:
-            return False, f"Client initialization failed: {str(e)}"
+            api_status["github_ai"] = {"status": "error", "message": f"GitHub AI error: {str(e)[:50]}..."}
+    else:
+        api_status["github_ai"] = {"status": "missing", "message": "GitHub AI API key not configured"}
+    
+    # OpenAI API (alternative)
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key and openai_api_key != "your_openai_api_key_here":
+        api_status["openai"] = {"status": "configured", "message": "OpenAI API configured"}
+    else:
+        api_status["openai"] = {"status": "missing", "message": "OpenAI API key not configured"}
+    
+    # Reddit API
+    reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
+    reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    if (reddit_client_id and reddit_client_id != "your_reddit_client_id_here" and 
+        reddit_client_secret and reddit_client_secret != "your_reddit_client_secret_here"):
+        api_status["reddit"] = {"status": "configured", "message": "Reddit API configured"}
+    else:
+        api_status["reddit"] = {"status": "missing", "message": "Reddit API not configured"}
+    
+    # Alpha Vantage API
+    alpha_vantage_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if alpha_vantage_key and alpha_vantage_key != "your_alpha_vantage_api_key_here":
+        api_status["alpha_vantage"] = {"status": "configured", "message": "Alpha Vantage API configured"}
+    else:
+        api_status["alpha_vantage"] = {"status": "missing", "message": "Alpha Vantage API not configured"}
+    
+    return api_status
 
-    except ImportError:
-        return False, "OpenAI library not installed"
+
+def check_llm_availability():
+    """Check if LLM is available for use"""
+    api_status = check_api_status()
+    
+    # Check GitHub AI first
+    if api_status["github_ai"]["status"] == "configured":
+        return True, "GitHub AI API ready"
+    
+    # Fallback to OpenAI
+    if api_status["openai"]["status"] == "configured":
+        return True, "OpenAI API ready"
+    
+    # No LLM available
+    return False, "No LLM API keys configured"
 
 
 def initialize_session_state():
@@ -761,6 +796,73 @@ def generate_simple_combined_assessment(financial_analysis, market_intelligence)
     }
 
 
+def display_api_configuration_sidebar():
+    """Display API configuration status in sidebar"""
+    
+    st.sidebar.header("🔑 API Configuration")
+    
+    api_status = check_api_status()
+    
+    # API Status Overview
+    configured_count = sum(1 for status in api_status.values() if status["status"] == "configured")
+    total_apis = len(api_status)
+    
+    progress_pct = configured_count / total_apis if total_apis > 0 else 0
+    st.sidebar.progress(progress_pct)
+    st.sidebar.caption(f"{configured_count}/{total_apis} APIs configured")
+    
+    # Individual API Status
+    for api_name, status in api_status.items():
+        status_emoji = {
+            "configured": "✅",
+            "missing": "❌", 
+            "error": "⚠️"
+        }.get(status["status"], "❓")
+        
+        api_display_names = {
+            "github_ai": "GitHub AI",
+            "openai": "OpenAI", 
+            "reddit": "Reddit",
+            "alpha_vantage": "Alpha Vantage"
+        }
+        
+        api_display = api_display_names.get(api_name, api_name.title())
+        st.sidebar.markdown(f"{status_emoji} **{api_display}**")
+        st.sidebar.caption(status["message"])
+    
+    # Configuration Help
+    with st.sidebar.expander("🛠️ API Setup Guide"):
+        st.markdown("""
+        **Required for AI Analysis:**
+        - GitHub AI API (recommended) OR OpenAI API
+        
+        **Optional for Enhanced Features:**
+        - Reddit API (social sentiment)
+        - Alpha Vantage API (additional data)
+        
+        **Setup Instructions:**
+        1. Get API keys from respective providers
+        2. Set environment variables or use .env file
+        3. Refresh the page to detect changes
+        
+        **Environment Variables:**
+        - `GITHUB_AI_API_KEY`
+        - `OPENAI_API_KEY` 
+        - `REDDIT_CLIENT_ID` & `REDDIT_CLIENT_SECRET`
+        - `ALPHA_VANTAGE_API_KEY`
+        """)
+        
+        if st.button("📖 View Full Setup Guide", key="api_guide"):
+            st.session_state.show_api_guide = True
+    
+    # Refresh API Status
+    if st.sidebar.button("🔄 Refresh API Status", help="Check API configuration again"):
+        # Clear any cached API status
+        if hasattr(st.session_state, 'api_status_cache'):
+            del st.session_state.api_status_cache
+        st.rerun()
+
+
 def display_system_health_sidebar():
     """Display system health monitoring in sidebar"""
 
@@ -802,6 +904,339 @@ def display_system_health_sidebar():
         cache_hit_rate = health.get("cache_hit_rate", 0)
         if cache_hit_rate > 0:
             st.sidebar.metric("Cache Hit Rate", f"{cache_hit_rate}%")
+
+
+def display_api_setup_guide():
+    """Display comprehensive API setup guide"""
+    
+    st.markdown("# 🔑 API Configuration Guide")
+    st.markdown("Complete guide to setting up API keys for the AI Investment Research Agent")
+    
+    # Back button
+    if st.button("← Back to Dashboard"):
+        st.session_state.show_api_guide = False
+        st.rerun()
+    
+    # Current API Status
+    st.markdown("## 📊 Current API Status")
+    api_status = check_api_status()
+    
+    cols = st.columns(2)
+    
+    for i, (api_name, status) in enumerate(api_status.items()):
+        col = cols[i % 2]
+        
+        with col:
+            status_color = {
+                "configured": "🟢",
+                "missing": "🔴", 
+                "error": "🟡"
+            }.get(status["status"], "⚪")
+            
+            api_display_names = {
+                "github_ai": "GitHub AI API",
+                "openai": "OpenAI API", 
+                "reddit": "Reddit API",
+                "alpha_vantage": "Alpha Vantage API"
+            }
+            
+            api_display = api_display_names.get(api_name, api_name.title())
+            st.markdown(f"### {status_color} {api_display}")
+            st.write(status["message"])
+    
+    st.markdown("---")
+    
+    # Setup Instructions
+    st.markdown("## 🛠️ Setup Instructions")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["GitHub AI (Recommended)", "OpenAI (Alternative)", "Reddit API", "Alpha Vantage"])
+    
+    with tab1:
+        st.markdown("""
+        ### GitHub AI API Setup
+        
+        **Why GitHub AI?**
+        - Free tier available
+        - High rate limits
+        - Same models as OpenAI
+        - Easy to get started
+        
+        **Steps:**
+        1. Go to [GitHub Models](https://docs.github.com/en/github-models)
+        2. Sign in with your GitHub account
+        3. Navigate to the API section
+        4. Generate a new API key
+        5. Set the environment variable:
+        
+        ```bash
+        GITHUB_AI_API_KEY=your_api_key_here
+        ```
+        
+        **For Streamlit Cloud Deployment:**
+        - Add the key to your app's Secrets management
+        - Go to your app settings → Secrets
+        - Add: `GITHUB_AI_API_KEY = "your_key_here"`
+        """)
+        
+        if st.button("🔗 Open GitHub Models", key="github_link"):
+            st.markdown("[GitHub Models Documentation](https://docs.github.com/en/github-models)")
+    
+    with tab2:
+        st.markdown("""
+        ### OpenAI API Setup
+        
+        **When to use:**
+        - Alternative to GitHub AI
+        - More direct access to OpenAI models
+        - Paid service with better support
+        
+        **Steps:**
+        1. Go to [OpenAI Platform](https://platform.openai.com/)
+        2. Create an account or sign in
+        3. Navigate to API Keys section
+        4. Create a new secret key
+        5. Set the environment variable:
+        
+        ```bash
+        OPENAI_API_KEY=your_api_key_here
+        ```
+        
+        **Cost Considerations:**
+        - Pay-per-use model
+        - Typical research costs $0.01-0.10 per analysis
+        - Set usage limits to control costs
+        """)
+        
+        if st.button("🔗 Open OpenAI Platform", key="openai_link"):
+            st.markdown("[OpenAI API Platform](https://platform.openai.com/)")
+    
+    with tab3:
+        st.markdown("""
+        ### Reddit API Setup (Optional)
+        
+        **Purpose:**
+        - Social sentiment analysis
+        - Community discussions about stocks
+        - Enhanced market intelligence
+        
+        **Steps:**
+        1. Go to [Reddit Apps](https://www.reddit.com/prefs/apps)
+        2. Create a new application
+        3. Choose "script" type
+        4. Get your client ID and secret
+        5. Set environment variables:
+        
+        ```bash
+        REDDIT_CLIENT_ID=your_client_id
+        REDDIT_CLIENT_SECRET=your_client_secret
+        REDDIT_USER_AGENT=FinTechAgent/1.0
+        ```
+        
+        **Note:** Reddit API is free but has rate limits
+        """)
+        
+        if st.button("🔗 Open Reddit Apps", key="reddit_link"):
+            st.markdown("[Reddit Application Preferences](https://www.reddit.com/prefs/apps)")
+    
+    with tab4:
+        st.markdown("""
+        ### Alpha Vantage API Setup (Optional)
+        
+        **Purpose:**
+        - Additional financial data
+        - Historical stock prices
+        - Economic indicators
+        
+        **Steps:**
+        1. Go to [Alpha Vantage](https://www.alphavantage.co/support/#api-key)
+        2. Sign up for a free account
+        3. Get your API key from the dashboard
+        4. Set the environment variable:
+        
+        ```bash
+        ALPHA_VANTAGE_API_KEY=your_api_key_here
+        ```
+        
+        **Free Tier:**
+        - 25 requests per day
+        - No credit card required
+        - Sufficient for basic research
+        """)
+        
+        if st.button("🔗 Open Alpha Vantage", key="alpha_link"):
+            st.markdown("[Alpha Vantage API](https://www.alphavantage.co/support/#api-key)")
+    
+    st.markdown("---")
+    
+    # Environment Setup
+    st.markdown("## 🌍 Environment Setup Methods")
+    
+    method_tab1, method_tab2, method_tab3 = st.tabs(["Local Development", "Streamlit Cloud", "Docker Deployment"])
+    
+    with method_tab1:
+        st.markdown("""
+        ### Local Development
+        
+        **Option 1: .env File (Recommended)**
+        Create a `.env` file in your project root:
+        
+        ```bash
+        # GitHub AI API (Required for AI features)
+        GITHUB_AI_API_KEY=your_github_ai_api_key_here
+        
+        # OpenAI API (Alternative)
+        OPENAI_API_KEY=your_openai_api_key_here
+        
+        # Reddit API (Optional)
+        REDDIT_CLIENT_ID=your_reddit_client_id_here
+        REDDIT_CLIENT_SECRET=your_reddit_client_secret_here
+        REDDIT_USER_AGENT=FinTechAgent/1.0
+        
+        # Alpha Vantage API (Optional)
+        ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key_here
+        ```
+        
+        **Option 2: System Environment Variables**
+        ```bash
+        export GITHUB_AI_API_KEY="your_key_here"
+        export OPENAI_API_KEY="your_key_here"
+        # ... etc
+        ```
+        """)
+    
+    with method_tab2:
+        st.markdown("""
+        ### Streamlit Cloud Deployment
+        
+        **Steps:**
+        1. Deploy your app to Streamlit Cloud
+        2. Go to your app dashboard
+        3. Click on "Settings" → "Secrets"
+        4. Add your API keys in TOML format:
+        
+        ```toml
+        [api_keys]
+        GITHUB_AI_API_KEY = "your_github_ai_api_key_here"
+        OPENAI_API_KEY = "your_openai_api_key_here"
+        REDDIT_CLIENT_ID = "your_reddit_client_id_here"
+        REDDIT_CLIENT_SECRET = "your_reddit_client_secret_here"
+        REDDIT_USER_AGENT = "FinTechAgent/1.0"
+        ALPHA_VANTAGE_API_KEY = "your_alpha_vantage_api_key_here"
+        ```
+        
+        **Important:** Never commit API keys to your repository!
+        """)
+    
+    with method_tab3:
+        st.markdown("""
+        ### Docker Deployment
+        
+        **Using Environment Variables:**
+        ```bash
+        docker run -e GITHUB_AI_API_KEY="your_key" \\
+                   -e OPENAI_API_KEY="your_key" \\
+                   -p 8501:8501 \\
+                   your-fintech-agent
+        ```
+        
+        **Using .env file:**
+        ```bash
+        docker run --env-file .env \\
+                   -p 8501:8501 \\
+                   your-fintech-agent
+        ```
+        """)
+    
+    st.markdown("---")
+    
+    # Troubleshooting
+    st.markdown("## 🔧 Troubleshooting")
+    
+    with st.expander("Common Issues and Solutions"):
+        st.markdown("""
+        **❌ "API key not configured"**
+        - Check if environment variable is set correctly
+        - Ensure no extra spaces or quotes
+        - Restart the application after setting variables
+        
+        **❌ "API call failed" or "Unauthorized"**
+        - Verify API key is valid and active
+        - Check if you have sufficient quota/credits
+        - Ensure API key has required permissions
+        
+        **❌ "OpenAI library not installed"**
+        - Install required packages: `pip install openai`
+        - Check requirements.txt includes all dependencies
+        
+        **❌ Rate limit errors**
+        - Wait before retrying requests
+        - Consider upgrading to paid tier
+        - Check API provider's rate limits
+        
+        **❌ Streamlit Cloud deployment issues**
+        - Verify secrets are properly formatted in TOML
+        - Check app logs for specific error messages
+        - Ensure all required packages are in requirements.txt
+        """)
+    
+    # Testing Section
+    st.markdown("## 🧪 Test Your Configuration")
+    
+    if st.button("🔍 Test All APIs", type="primary"):
+        st.markdown("### Test Results:")
+        
+        api_status = check_api_status()
+        
+        for api_name, status in api_status.items():
+            api_display_names = {
+                "github_ai": "GitHub AI API",
+                "openai": "OpenAI API", 
+                "reddit": "Reddit API",
+                "alpha_vantage": "Alpha Vantage API"
+            }
+            
+            api_display = api_display_names.get(api_name, api_name.title())
+            
+            if status["status"] == "configured":
+                st.success(f"✅ {api_display}: {status['message']}")
+            elif status["status"] == "error":
+                st.error(f"⚠️ {api_display}: {status['message']}")
+            else:
+                st.info(f"ℹ️ {api_display}: {status['message']}")
+    
+    st.markdown("---")
+    
+    # Final Tips
+    st.markdown("## 💡 Pro Tips")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **🎯 Getting Started Quickly:**
+        - Start with GitHub AI API (free)
+        - Use the basic research features first
+        - Add optional APIs later for enhanced features
+        
+        **💰 Cost Management:**
+        - Monitor your API usage regularly
+        - Set usage alerts with providers
+        - Cache research results locally
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🔒 Security Best Practices:**
+        - Never commit API keys to repositories
+        - Use environment variables or secrets management
+        - Rotate API keys regularly
+        - Restrict API key permissions when possible
+        
+        **🚀 Performance Optimization:**
+        - Use caching to reduce API calls
+        - Choose the right API for your needs
+        - Monitor response times and adjust accordingly
+        """)
 
 
 def main():
@@ -885,6 +1320,11 @@ def main():
         research_button = st.button(
             "🚀 Start AI Research", type="primary", use_container_width=True
         )
+
+        st.markdown("---")
+
+        # Display API configuration
+        display_api_configuration_sidebar()
 
         st.markdown("---")
 
@@ -1014,6 +1454,11 @@ def main():
                 )
                 st.success(f"✅ Research completed for {ticker} using legacy pipeline!")
                 st.rerun()
+
+    # Display API Setup Guide if requested
+    if hasattr(st.session_state, 'show_api_guide') and st.session_state.show_api_guide:
+        display_api_setup_guide()
+        return
 
     # Display results
     if st.session_state.research_data:
