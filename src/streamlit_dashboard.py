@@ -198,13 +198,22 @@ def initialize_session_state():
         is_available, status_msg = check_llm_availability()
         st.session_state.llm_status = {"available": is_available, "message": status_msg}
 
-    # Initialize Orchestrator (cached for performance)
+    # Initialize data managers with session state persistence
+    if "structured_manager" not in st.session_state:
+        st.session_state.structured_manager = StructuredDataManager()
+    
+    if "vector_manager" not in st.session_state:
+        st.session_state.vector_manager = VectorDataManager()
+    
+    # Initialize Orchestrator (cached for performance) with shared data managers
     if "orchestrator" not in st.session_state:
         st.session_state.orchestrator = InvestmentResearchOrchestrator(
             use_cache=True,
             cache_duration_minutes=30,  # Cache for 30 minutes
             parallel_execution=True,  # Run analysis in parallel
             max_retries=3,  # Retry failed tasks
+            structured_manager=st.session_state.structured_manager,
+            vector_manager=st.session_state.vector_manager,
         )
 
 
@@ -863,6 +872,48 @@ def display_api_configuration_sidebar():
         st.rerun()
 
 
+def display_storage_status_sidebar():
+    """Display data storage status in sidebar"""
+    
+    st.sidebar.header("💾 Data Storage")
+    
+    # Structured data storage status
+    if "structured_manager" in st.session_state:
+        structured_info = st.session_state.structured_manager.get_storage_info()
+        
+        storage_emoji = "💽" if structured_info["storage_type"] == "file_system" else "🧠"
+        st.sidebar.markdown(f"{storage_emoji} **Structured Data**")
+        st.sidebar.caption(f"Type: {structured_info['storage_type'].replace('_', ' ').title()}")
+        st.sidebar.caption(f"Entries: {structured_info['entry_count']}")
+        
+        if structured_info["status"] != "active":
+            st.sidebar.warning(f"⚠️ {structured_info['status']}")
+    
+    # Vector data storage status  
+    if "vector_manager" in st.session_state:
+        vector_stats = st.session_state.vector_manager.get_collection_stats()
+        
+        storage_emoji = "🗂️" if vector_stats.get("storage_type") == "chromadb" else "🧠"
+        st.sidebar.markdown(f"{storage_emoji} **Vector Data**")
+        st.sidebar.caption(f"Type: {vector_stats.get('storage_type', 'unknown').replace('_', ' ').title()}")
+        st.sidebar.caption(f"Documents: {vector_stats.get('total_documents', 0)}")
+    
+    # Storage tips
+    with st.sidebar.expander("ℹ️ Storage Info"):
+        st.markdown("""
+        **File System Storage:**
+        - Persistent across sessions
+        - Available locally
+        
+        **In-Memory Storage:**  
+        - Used in cloud deployments
+        - Data persists during session
+        - Resets when app restarts
+        
+        **Note:** Cloud deployments automatically use in-memory storage for security.
+        """)
+
+
 def display_system_health_sidebar():
     """Display system health monitoring in sidebar"""
 
@@ -1325,6 +1376,11 @@ def main():
 
         # Display API configuration
         display_api_configuration_sidebar()
+
+        st.markdown("---")
+
+        # Display storage status
+        display_storage_status_sidebar()
 
         st.markdown("---")
 

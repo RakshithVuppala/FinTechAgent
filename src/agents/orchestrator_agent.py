@@ -49,11 +49,13 @@ class InvestmentResearchOrchestrator:
         cache_duration_minutes: int = 60,
         max_retries: int = 3,
         parallel_execution: bool = True,
+        structured_manager: Optional[StructuredDataManager] = None,
+        vector_manager: Optional[VectorDataManager] = None,
     ):
-        # Initialize all components
+        # Initialize or use provided components
         self.data_collector = FinancialDataCollector()
-        self.structured_manager = StructuredDataManager()
-        self.vector_manager = VectorDataManager()
+        self.structured_manager = structured_manager or StructuredDataManager()
+        self.vector_manager = vector_manager or VectorDataManager()
         self.financial_agent = EnhancedFinancialAnalysisAgent(use_llm=True)
         self.market_agent = MarketIntelligenceAgent(use_llm=True)
 
