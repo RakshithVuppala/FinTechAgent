@@ -8,11 +8,6 @@ from enum import Enum
 import json
 import traceback
 
-# Import system modules
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 # Import your existing components
 from financial_data_collector import FinancialDataCollector
 from data_manager import StructuredDataManager
@@ -54,14 +49,13 @@ class InvestmentResearchOrchestrator:
         cache_duration_minutes: int = 60,
         max_retries: int = 3,
         parallel_execution: bool = True,
-        use_llm: bool = True,
     ):
         # Initialize all components
         self.data_collector = FinancialDataCollector()
         self.structured_manager = StructuredDataManager()
         self.vector_manager = VectorDataManager()
-        self.financial_agent = EnhancedFinancialAnalysisAgent(use_llm=use_llm)
-        self.market_agent = MarketIntelligenceAgent(use_llm=use_llm)
+        self.financial_agent = EnhancedFinancialAnalysisAgent(use_llm=True)
+        self.market_agent = MarketIntelligenceAgent(use_llm=True)
 
         # Configuration
         self.use_cache = use_cache
@@ -128,12 +122,7 @@ class InvestmentResearchOrchestrator:
         for attempt in range(self.max_retries):
             try:
                 self.logger.info(f"Executing {task_name} (attempt {attempt + 1})")
-                
-                # Check if function is async or sync
-                if asyncio.iscoroutinefunction(task_func):
-                    result = await task_func(*args, **kwargs)
-                else:
-                    result = task_func(*args, **kwargs)
+                result = await task_func(*args, **kwargs)
 
                 execution_time = time.time() - start_time
                 task_result = TaskResult(
@@ -165,7 +154,7 @@ class InvestmentResearchOrchestrator:
                 # Wait before retry (exponential backoff)
                 await asyncio.sleep(2**attempt)
 
-    def _collect_company_data(self, ticker: str, company_name: str) -> Dict:
+    async def _collect_company_data(self, ticker: str, company_name: str) -> Dict:
         """Task: Collect all company data"""
         # Check cache first
         cached_data = self._get_from_cache(ticker, "data_collection")
@@ -175,41 +164,27 @@ class InvestmentResearchOrchestrator:
 
         # Collect fresh data
         data = self.data_collector.collect_separated_data(ticker, company_name)
-        
-        if not data:
-            raise Exception(f"Failed to collect data for {ticker}")
 
         # Store in cache
         self._store_in_cache(ticker, "data_collection", data)
 
         return data
 
-    def _store_data(self, ticker: str, data: Dict) -> bool:
+    async def _store_data(self, ticker: str, data: Dict) -> bool:
         """Task: Store data in appropriate storage systems"""
-        if not data or not isinstance(data, dict):
-            raise Exception(f"Invalid data format for {ticker}")
-            
         # Store structured data
-        structured_data = data.get("structured", {})
-        if structured_data:
-            structured_stored = self.structured_manager.store_company_data(
-                ticker, structured_data
-            )
-        else:
-            structured_stored = True  # No structured data to store
+        structured_stored = self.structured_manager.store_company_data(
+            ticker, data["structured"]
+        )
 
         # Store unstructured data
-        unstructured_data = data.get("unstructured", {})
-        if unstructured_data:
-            vector_stored = self.vector_manager.store_unstructured_data(
-                ticker, unstructured_data
-            )
-        else:
-            vector_stored = True  # No unstructured data to store
+        vector_stored = self.vector_manager.store_unstructured_data(
+            ticker, data["unstructured"]
+        )
 
         return structured_stored and vector_stored
 
-    def _analyze_financials(self, ticker: str) -> Dict:
+    async def _analyze_financials(self, ticker: str) -> Dict:
         """Task: Run financial analysis"""
         # Check cache
         cached_analysis = self._get_from_cache(ticker, "financial_analysis")
@@ -223,16 +198,13 @@ class InvestmentResearchOrchestrator:
 
         # Run analysis
         analysis = self.financial_agent.analyze_company_financials(structured_data)
-        
-        if not analysis or "error" in analysis:
-            raise Exception(f"Financial analysis failed for {ticker}: {analysis.get('error', 'Unknown error')}")
 
         # Cache result
         self._store_in_cache(ticker, "financial_analysis", analysis)
 
         return analysis
 
-    def _analyze_market_intelligence(self, ticker: str) -> Dict:
+    async def _analyze_market_intelligence(self, ticker: str) -> Dict:
         """Task: Run market intelligence analysis"""
         # Check cache
         cached_intelligence = self._get_from_cache(ticker, "market_intelligence")
@@ -243,77 +215,30 @@ class InvestmentResearchOrchestrator:
         focus_areas = [
             "sentiment",
             "news_impact",
-            "risk_factors"
+            "risk_factors",
+            "competitive_landscape",
         ]
         intelligence = self.market_agent.analyze_market_intelligence(
             ticker, focus_areas
         )
-        
-        if not intelligence or "error" in intelligence:
-            raise Exception(f"Market intelligence analysis failed for {ticker}: {intelligence.get('error', 'Unknown error')}")
 
         # Cache result
         self._store_in_cache(ticker, "market_intelligence", intelligence)
 
         return intelligence
 
-    def _calculate_financial_score(self, financial_analysis: Dict) -> float:
-        """Calculate a financial score from 0-100 based on available metrics"""
-        score = 60  # Start with neutral base score
-        
-        # Check valuation metrics
-        valuation = financial_analysis.get("valuation_analysis", {})
-        pe_ratio = valuation.get("pe_ratio", 0)
-        
-        if pe_ratio and pe_ratio > 0:
-            if 10 <= pe_ratio <= 20:  # Good P/E range
-                score += 15
-            elif 20 < pe_ratio <= 30:  # Acceptable P/E
-                score += 5
-            elif pe_ratio > 40:  # High P/E, might be overvalued
-                score -= 10
-        
-        # Check risk metrics
-        risk_assessment = financial_analysis.get("risk_assessment", {})
-        beta = risk_assessment.get("beta", 1.0)
-        
-        if beta and 0.8 <= beta <= 1.2:  # Moderate risk
-            score += 10
-        elif beta > 1.5:  # High risk
-            score -= 15
-        
-        # Check market cap (stability indicator)
-        company_overview = financial_analysis.get("company_overview", {})
-        market_cap = company_overview.get("market_cap", 0)
-        
-        if market_cap > 100_000_000_000:  # Large cap (>100B)
-            score += 10
-        elif market_cap > 10_000_000_000:  # Mid cap
-            score += 5
-        
-        # Check overall assessment
-        overall_assessment = financial_analysis.get("overall_assessment", {})
-        assessment_score = overall_assessment.get("score", 0)
-        if assessment_score >= 2:  # Good score from the financial agent
-            score += 10
-        
-        # Ensure score is within bounds
-        return max(0, min(100, score))
-
     def _generate_combined_assessment(
         self, ticker: str, financial_analysis: Dict, market_intelligence: Dict
     ) -> Dict:
         """Task: Generate final combined investment assessment"""
 
-        # Extract key metrics from financial analysis
-        financial_assessment = financial_analysis.get("overall_assessment", {})
-        
-        # Calculate financial score based on available metrics
-        financial_score = self._calculate_financial_score(financial_analysis)
-        
-        # Get market sentiment from market intelligence
-        market_assessment = market_intelligence.get("overall_assessment", {})
-        market_sentiment = market_assessment.get("market_sentiment", "neutral")
+        # Extract key metrics
+        financial_score = financial_analysis.get("overall_assessment", {}).get(
+            "overall_score", 0
+        )
+        market_sentiment = market_intelligence.get("overall_assessment", {}).get(
+            "market_sentiment", "neutral"
+        )
 
         # Combine scores (weighted average)
         financial_weight = 0.6
@@ -321,11 +246,11 @@ class InvestmentResearchOrchestrator:
 
         # Convert market sentiment to numeric score
         sentiment_scores = {
-            "very_positive": 85,
-            "positive": 75,
+            "very_positive": 95,
+            "positive": 80,
             "neutral": 60,
-            "negative": 45,
-            "very_negative": 30,
+            "negative": 40,
+            "very_negative": 20,
         }
         market_score = sentiment_scores.get(market_sentiment, 60)
 
@@ -374,15 +299,11 @@ class InvestmentResearchOrchestrator:
         strengths = []
 
         # From financial analysis
-        valuation = financial_analysis.get("valuation_analysis", {})
-        pe_ratio = valuation.get("pe_ratio", 0)
-        if pe_ratio and 15 <= pe_ratio <= 25:
-            strengths.append("Reasonable valuation metrics")
+        if financial_analysis.get("valuation_analysis", {}).get("score", 0) > 70:
+            strengths.append("Attractive valuation metrics")
 
-        risk_assessment = financial_analysis.get("risk_assessment", {})
-        beta = risk_assessment.get("beta", 1.0)
-        if beta and 0.8 <= beta <= 1.2:
-            strengths.append("Moderate risk profile")
+        if financial_analysis.get("risk_analysis", {}).get("score", 0) > 70:
+            strengths.append("Low financial risk profile")
 
         # From market intelligence
         sentiment = market_intelligence.get("overall_assessment", {}).get(
@@ -400,17 +321,8 @@ class InvestmentResearchOrchestrator:
         risks = []
 
         # From financial analysis
-        risk_assessment = financial_analysis.get("risk_assessment", {})
-        beta = risk_assessment.get("beta", 1.0)
-        if beta and beta > 1.5:
-            risks.append("High volatility risk")
-            
-        # Check price position
-        price_position = risk_assessment.get("price_position_52week", 0.5)
-        if price_position > 0.9:
-            risks.append("Near 52-week high - potential overvaluation")
-        elif price_position < 0.1:
-            risks.append("Near 52-week low - potential fundamental issues")
+        if financial_analysis.get("risk_analysis", {}).get("score", 100) < 50:
+            risks.append("High financial volatility")
 
         # From market intelligence
         sentiment = market_intelligence.get("overall_assessment", {}).get(
@@ -433,11 +345,12 @@ class InvestmentResearchOrchestrator:
             return {"target_price": None, "upside_potential": None}
 
         # Simple price target calculation (can be enhanced)
-        financial_assessment = financial_analysis.get("overall_assessment", {})
-        financial_score = financial_assessment.get("score", 60)
-        
-        market_assessment = market_intelligence.get("overall_assessment", {})
-        market_sentiment = market_assessment.get("market_sentiment", "neutral")
+        financial_score = financial_analysis.get("overall_assessment", {}).get(
+            "overall_score", 60
+        )
+        market_sentiment = market_intelligence.get("overall_assessment", {}).get(
+            "market_sentiment", "neutral"
+        )
 
         # Base multiplier on scores
         multiplier = 1.0 + ((financial_score - 60) / 100)  # Base growth expectation
@@ -486,46 +399,10 @@ class InvestmentResearchOrchestrator:
 
         try:
             self._update_progress(f"Starting research for {ticker} ({company_name})", 0)
-            
-            # Step 0: Validate ticker before proceeding
-            self._update_progress(f"Validating ticker {ticker}...", 2)
-            
-            is_valid, error_message, suggestions = self.data_collector.validate_ticker(ticker)
-            if not is_valid:
-                error_details = {
-                    "error_type": "invalid_ticker",
-                    "ticker": ticker,
-                    "error_message": error_message,
-                    "suggestions": suggestions,
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                self.logger.error(f"Invalid ticker {ticker}: {error_message}")
-                self.logger.info(f"Suggested alternatives: {suggestions}")
-                
-                # Store failed execution in history
-                self.execution_history.append(
-                    {
-                        "ticker": ticker,
-                        "timestamp": datetime.now().isoformat(),
-                        "execution_time": time.time() - research_start_time,
-                        "success": False,
-                        "error": f"Invalid ticker: {error_message}",
-                        "error_type": "invalid_ticker",
-                        "suggestions": suggestions
-                    }
-                )
-                
-                raise ValueError(
-                    f"Invalid ticker '{ticker}': {error_message}. "
-                    f"Suggested alternatives: {', '.join(suggestions[:3])}"
-                )
-            
-            self._update_progress(f"Ticker {ticker} validated successfully", 5)
 
-            # Task 1: Data Collection (5-30%)
+            # Task 1: Data Collection (0-30%)
             self._update_progress(
-                "Collecting financial data from multiple sources...", 10
+                "Collecting financial data from multiple sources...", 5
             )
             data_task = await self._execute_task_with_retry(
                 "data_collection", self._collect_company_data, ticker, company_name
@@ -550,20 +427,13 @@ class InvestmentResearchOrchestrator:
                     "Running AI analysis (financial + market intelligence)...", 45
                 )
 
-                # Create async wrappers for the sync methods and run in parallel
-                async def run_financial():
-                    return await self._execute_task_with_retry(
-                        "financial_analysis", self._analyze_financials, ticker
-                    )
-                
-                async def run_market():
-                    return await self._execute_task_with_retry(
-                        "market_intelligence", self._analyze_market_intelligence, ticker
-                    )
-
                 financial_task, market_task = await asyncio.gather(
-                    run_financial(),
-                    run_market(),
+                    self._execute_task_with_retry(
+                        "financial_analysis", self._analyze_financials, ticker
+                    ),
+                    self._execute_task_with_retry(
+                        "market_intelligence", self._analyze_market_intelligence, ticker
+                    ),
                     return_exceptions=True,
                 )
             else:
@@ -579,12 +449,6 @@ class InvestmentResearchOrchestrator:
                 )
 
             self._update_progress("AI analysis completed", 90)
-
-            # Handle exceptions from parallel execution
-            if isinstance(financial_task, Exception):
-                raise financial_task
-            if isinstance(market_task, Exception):
-                raise market_task
 
             # Validate analysis results
             if financial_task.status != TaskStatus.COMPLETED:
