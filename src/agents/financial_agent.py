@@ -449,10 +449,14 @@ ASSESSMENTS:
         else:
             overall_rating = "Requires careful analysis"
 
+        # Convert 0-3 score to 0-100 scale for orchestrator compatibility
+        overall_score = round((score / 3) * 100, 1)
+        
         return {
             "overall_rating": overall_rating,
             "score": score,
             "max_score": 3,
+            "overall_score": overall_score,  # Added for orchestrator compatibility
             "key_factors": factors,
         }
 

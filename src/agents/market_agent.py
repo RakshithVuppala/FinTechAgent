@@ -294,11 +294,14 @@ Based on the market intelligence analysis below, provide an overall market asses
 {summary_content}
 
 Provide:
-1. Overall Market Outlook (Positive/Negative/Neutral)
-2. Key Market Drivers (top 2-3 factors affecting the stock)
-3. Main Risks (primary concerns for investors)
-4. Investment Implications (what this means for potential investors)
-5. Confidence Level (High/Medium/Low)
+1. Overall Market Sentiment: MUST be exactly one of: "very_positive", "positive", "neutral", "negative", or "very_negative"
+2. Overall Market Outlook (Positive/Negative/Neutral)
+3. Key Market Drivers (top 2-3 factors affecting the stock)
+4. Main Risks (primary concerns for investors)
+5. Investment Implications (what this means for potential investors)
+6. Confidence Level (High/Medium/Low)
+
+IMPORTANT: Start your response with "SENTIMENT: [sentiment]" where [sentiment] is one of the exact values listed above.
 
 Keep response concise and actionable for investment decisions.
 """
@@ -313,8 +316,20 @@ Keep response concise and actionable for investment decisions.
                 temperature=0.2
             )
             
+            # Extract sentiment from LLM response
+            llm_response = response.choices[0].message.content
+            market_sentiment = 'neutral'  # default
+            
+            # Parse sentiment from response
+            if llm_response.startswith('SENTIMENT:'):
+                sentiment_line = llm_response.split('\n')[0]
+                sentiment_value = sentiment_line.replace('SENTIMENT:', '').strip().lower()
+                if sentiment_value in ['very_positive', 'positive', 'neutral', 'negative', 'very_negative']:
+                    market_sentiment = sentiment_value
+            
             return {
-                'overall_outlook': response.choices[0].message.content,
+                'overall_outlook': llm_response,
+                'market_sentiment': market_sentiment,  # Added for orchestrator compatibility
                 'analysis_method': 'llm_comprehensive',
                 'confidence': 'high'
             }
@@ -337,15 +352,20 @@ Keep response concise and actionable for investment decisions.
             elif sentiment == 'negative':
                 negative_areas += 1
         
+        # Determine market sentiment for orchestrator compatibility
         if positive_areas > negative_areas:
             outlook = 'Positive market indicators outweigh negative factors'
+            market_sentiment = 'positive'
         elif negative_areas > positive_areas:
             outlook = 'Negative market factors require attention'
+            market_sentiment = 'negative'
         else:
             outlook = 'Mixed market signals require careful analysis'
+            market_sentiment = 'neutral'
         
         return {
             'overall_outlook': outlook,
+            'market_sentiment': market_sentiment,  # Added for orchestrator compatibility
             'analysis_method': 'basic_sentiment_aggregation',
             'confidence': 'medium'
         }
