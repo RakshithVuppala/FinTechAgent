@@ -11,7 +11,8 @@ streamlit>=1.28.0
 plotly>=5.15.0
 
 # Database and Vector Storage
-chromadb>=0.4.0
+pinecone>=5.0.0
+sentence-transformers>=2.2.0
 
 # LLM and AI Integration
 openai>=1.0.0

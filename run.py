@@ -76,6 +76,11 @@ def run_application():
     print("🌐 The application will open in your browser at:")
     print("   http://localhost:8501")
     print()
+    print("💡 Running in LOCAL MODE - Perfect for development and testing!")
+    print("   - All data stored locally in 'data/' directory")
+    print("   - API keys loaded from .env file (if present)")
+    print("   - Application optimized for localhost performance")
+    print()
     print("Press Ctrl+C to stop the application")
     print("=" * 60)
     
@@ -86,7 +91,9 @@ def run_application():
         subprocess.run([
             sys.executable, "-m", "streamlit", "run", "streamlit_dashboard.py",
             "--server.port=8501",
-            "--server.address=localhost"
+            "--server.address=localhost",
+            "--server.headless=true",
+            "--browser.gatherUsageStats=false"
         ])
     except KeyboardInterrupt:
         print("\n👋 Application stopped by user")

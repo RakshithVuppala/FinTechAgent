@@ -5,103 +5,71 @@ Handles storage and retrieval of unstructured financial data
 
 import os
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from datetime import datetime
 import hashlib
 import json
 
-# Load environment variables
+# Handle ChromaDB import with fallback for deployment environments
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-# Handle Pinecone import with fallback for deployment environments
-try:
-    from pinecone import Pinecone, ServerlessSpec
-    from sentence_transformers import SentenceTransformer
-    PINECONE_AVAILABLE = True
+    import chromadb
+    CHROMADB_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
-    PINECONE_AVAILABLE = False
+    CHROMADB_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning(f"Pinecone not available: {e}. Using in-memory storage fallback.")
+    logger.warning(f"ChromaDB not available: {e}. Using in-memory storage fallback.")
 
 logger = logging.getLogger(__name__)
 
 class VectorDataManager:
     """
-    Manages vector storage for unstructured financial data using Pinecone
+    Manages vector storage for unstructured financial data
     
     What this does:
     1. Takes news articles and social posts (text)
-    2. Converts them to mathematical vectors (embeddings) using SentenceTransformers
-    3. Stores vectors in Pinecone for fast similarity search (or in-memory fallback)
+    2. Converts them to mathematical vectors (embeddings)
+    3. Stores vectors in ChromaDB for fast similarity search (or in-memory fallback)
     4. Enables semantic search (meaning-based, not keyword-based)
     """
     
     def __init__(self, data_dir: str = "data/vector_db"):
         """
-        Initialize the Pinecone vector database with fallback support
+        Initialize the vector database with fallback support
         
         Args:
-            data_dir: Legacy parameter for compatibility (not used with Pinecone)
+            data_dir: Where to store the database files
         """
         self.data_dir = data_dir
-        self.use_pinecone = PINECONE_AVAILABLE
-        self.index_name = "financial-documents"
-        self.dimension = 384  # all-MiniLM-L6-v2 embedding dimension
+        self.use_chromadb = CHROMADB_AVAILABLE
         
-        if self.use_pinecone:
-            # Initialize Pinecone client
+        if self.use_chromadb:
+            # ChromaDB is available - use persistent storage
+            os.makedirs(data_dir, exist_ok=True)
+            
             try:
-                api_key = os.getenv('PINECONE_API_KEY')
-                if not api_key:
-                    raise ValueError("PINECONE_API_KEY not found in environment variables")
-                
-                self.pc = Pinecone(api_key=api_key)
-                
-                # Create index if it doesn't exist
-                if self.index_name not in self.pc.list_indexes().names():
-                    logger.info(f"Creating new Pinecone index: {self.index_name}")
-                    self.pc.create_index(
-                        name=self.index_name,
-                        dimension=self.dimension,
-                        metric="cosine",
-                        spec=ServerlessSpec(
-                            cloud="aws",
-                            region="us-east-1"
-                        )
-                    )
-                
-                # Connect to index
-                self.index = self.pc.Index(self.index_name)
-                
-                # Initialize embedding model
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                
-                logger.info(f"Vector database initialized with Pinecone (index: {self.index_name})")
-                
+                # Try persistent client first
+                self.client = chromadb.PersistentClient(path=data_dir)
             except Exception as e:
-                logger.warning(f"Failed to initialize Pinecone: {e}. Using in-memory fallback.")
-                self.use_pinecone = False
-        
-        if not self.use_pinecone:
-            # Fallback to in-memory storage
+                logger.warning(f"Failed to create persistent client: {e}. Using in-memory client.")
+                # Fallback to in-memory client
+                self.client = chromadb.EphemeralClient()
+                self.use_chromadb = "memory"
+            
+            # Create or get existing collection
+            self.collection = self.client.get_or_create_collection(
+                name="financial_documents",
+                metadata={"description": "Financial news articles and social sentiment data"}
+            )
+            
+            logger.info(f"Vector database initialized with ChromaDB ({self.use_chromadb})")
+        else:
+            # ChromaDB not available - use simple in-memory storage
             self.documents = []
             self.metadata = []
             self.ids = []
-            self.embeddings = []
             logger.info("Vector database initialized with in-memory fallback storage")
-        
-        # Log current status
-        if self.use_pinecone:
-            try:
-                stats = self.index.describe_index_stats()
-                doc_count = stats.get('total_vector_count', 0)
-                logger.info(f"Current index has {doc_count} documents")
-            except Exception as e:
-                logger.warning(f"Could not get index stats: {e}")
+        if self.use_chromadb:
+            logger.info(f"Current collection has {self.collection.count()} documents")
         else:
             logger.info(f"Current in-memory storage has {len(self.documents)} documents")
     
@@ -243,48 +211,16 @@ class VectorDataManager:
             if documents:
                 logger.info(f"Storing {len(documents)} documents in vector database...")
                 
-                if self.use_pinecone:
-                    # Generate embeddings for Pinecone
-                    logger.info("Generating embeddings...")
-                    embeddings = self.embedding_model.encode(documents, convert_to_tensor=False)
-                    
-                    # Prepare vectors for upsert
-                    vectors_to_upsert = []
-                    for i, (doc_id, embedding, metadata) in enumerate(zip(ids, embeddings, metadatas)):
-                        # Add document text to metadata for retrieval
-                        metadata_with_text = metadata.copy()
-                        metadata_with_text['document'] = documents[i]
-                        
-                        vectors_to_upsert.append({
-                            'id': doc_id,
-                            'values': embedding.tolist(),
-                            'metadata': metadata_with_text
-                        })
-                    
-                    # Upsert vectors to Pinecone in batches
-                    batch_size = 100
-                    for i in range(0, len(vectors_to_upsert), batch_size):
-                        batch = vectors_to_upsert[i:i+batch_size]
-                        self.index.upsert(vectors=batch)
-                        logger.debug(f"Upserted batch {i//batch_size + 1}/{(len(vectors_to_upsert)-1)//batch_size + 1}")
-                    
-                    # Get updated stats
-                    try:
-                        stats = self.index.describe_index_stats()
-                        total_count = stats.get('total_vector_count', 0)
-                        logger.info(f"Index now has {total_count} total documents")
-                    except Exception as e:
-                        logger.warning(f"Could not get updated stats: {e}")
-                        
+                if self.use_chromadb:
+                    # ChromaDB automatically converts text to vectors using embeddings
+                    self.collection.add(
+                        documents=documents,    # Text content (gets converted to vectors)
+                        metadatas=metadatas,   # Information about each document
+                        ids=ids                # Unique identifiers
+                    )
+                    logger.info(f"Collection now has {self.collection.count()} total documents")
                 else:
-                    # Fallback to in-memory storage with embeddings
-                    if hasattr(self, 'embedding_model'):
-                        embeddings = self.embedding_model.encode(documents, convert_to_tensor=False)
-                        self.embeddings.extend(embeddings)
-                    else:
-                        # Simple fallback without embeddings
-                        self.embeddings.extend([[0.0] * 384 for _ in documents])
-                    
+                    # Fallback to in-memory storage
                     self.documents.extend(documents)
                     self.metadata.extend(metadatas)
                     self.ids.extend(ids)
@@ -321,49 +257,44 @@ class VectorDataManager:
         try:
             logger.info(f"Searching for: '{query}' (ticker: {ticker}, type: {doc_type}, limit: {limit})")
             
-            if self.use_pinecone:
-                # Generate query embedding
-                query_embedding = self.embedding_model.encode([query], convert_to_tensor=False)[0]
-                
-                # Build filter criteria for Pinecone
-                filter_dict = {}
+            if self.use_chromadb:
+                # Build filter criteria
+                where_filter = {}
                 if ticker:
-                    filter_dict['ticker'] = {'$eq': ticker}
+                    where_filter['ticker'] = ticker
                 if doc_type:
-                    filter_dict['type'] = {'$eq': doc_type}
+                    where_filter['type'] = doc_type
                 
-                # Perform similarity search in Pinecone
-                search_results = self.index.query(
-                    vector=query_embedding.tolist(),
-                    top_k=limit,
-                    include_metadata=True,
-                    filter=filter_dict if filter_dict else None
+                # Perform semantic similarity search
+                # ChromaDB converts query to vector and finds most similar documents
+                results = self.collection.query(
+                    query_texts=[query],                    # Text to search for
+                    n_results=limit,                       # Number of results
+                    where=where_filter if where_filter else None,  # Filter criteria
+                    include=['documents', 'metadatas', 'distances']  # What to return
                 )
                 
                 # Format results for easier use
                 formatted_results = []
                 
-                if search_results['matches']:
-                    num_results = len(search_results['matches'])
+                if results['documents'] and results['documents'][0]:
+                    num_results = len(results['documents'][0])
                     logger.info(f"Found {num_results} matching documents")
                     
-                    for i, match in enumerate(search_results['matches']):
-                        metadata = match.get('metadata', {})
-                        document_text = metadata.pop('document', '')  # Extract document text from metadata
-                        
+                    for i in range(num_results):
                         result_item = {
-                            'document': document_text,                    # The actual text content
-                            'metadata': metadata,                        # Document information
-                            'similarity_score': match.get('score', 0),  # Pinecone returns cosine similarity (higher = more similar)
-                            'distance': 1 - match.get('score', 0),      # Convert to distance (lower = more similar)
-                            'id': match.get('id', ''),                  # Unique document ID
-                            'relevance': self._calculate_relevance_score(1 - match.get('score', 0))
+                            'document': results['documents'][0][i],      # The actual text content
+                            'metadata': results['metadatas'][0][i],      # Document information
+                            'similarity_score': 1 - results['distances'][0][i],  # Higher = more similar
+                            'distance': results['distances'][0][i],      # Lower = more similar
+                            'id': results['ids'][0][i],                  # Unique document ID
+                            'relevance': self._calculate_relevance_score(results['distances'][0][i])
                         }
                         formatted_results.append(result_item)
                         
                         # Log top results for debugging
                         if i < 3:  # Log first 3 results
-                            logger.debug(f"Result {i+1}: {metadata.get('title', 'No title')[:50]}... (similarity: {result_item['similarity_score']:.3f})")
+                            logger.debug(f"Result {i+1}: {result_item['metadata'].get('title', 'No title')[:50]}... (similarity: {result_item['similarity_score']:.3f})")
                 else:
                     logger.info("No matching documents found")
                     
@@ -430,34 +361,27 @@ class VectorDataManager:
         try:
             logger.info(f"Retrieving documents for {ticker} (type: {doc_type}, limit: {limit})")
             
-            if self.use_pinecone:
-                # Build filter for Pinecone
-                filter_dict = {'ticker': {'$eq': ticker}}
+            if self.use_chromadb:
+                # Build filter
+                where_filter = {'ticker': ticker}
                 if doc_type:
-                    filter_dict['type'] = {'$eq': doc_type}
+                    where_filter['type'] = doc_type
                 
-                # Use a dummy query to retrieve documents with filtering
-                # We'll use a very general query and rely on filtering
-                dummy_embedding = [0.1] * self.dimension
-                
-                results = self.index.query(
-                    vector=dummy_embedding,
-                    top_k=limit,
-                    include_metadata=True,
-                    filter=filter_dict
+                # Get documents (no similarity search, just filtering)
+                results = self.collection.get(
+                    where=where_filter,
+                    limit=limit,
+                    include=['documents', 'metadatas']
                 )
                 
                 # Format results
                 formatted_results = []
-                if results['matches']:
-                    for match in results['matches']:
-                        metadata = match.get('metadata', {})
-                        document_text = metadata.pop('document', '')  # Extract document text from metadata
-                        
+                if results['documents']:
+                    for i in range(len(results['documents'])):
                         formatted_results.append({
-                            'document': document_text,
-                            'metadata': metadata,
-                            'id': match.get('id', '')
+                            'document': results['documents'][i],
+                            'metadata': results['metadatas'][i],
+                            'id': results['ids'][i]
                         })
                     
                     logger.info(f"Retrieved {len(formatted_results)} documents for {ticker}")
@@ -643,27 +567,18 @@ class VectorDataManager:
         - Debugging issues
         """
         try:
-            if self.use_pinecone:
-                # Get index statistics from Pinecone
-                stats_response = self.index.describe_index_stats()
-                collection_count = stats_response.get('total_vector_count', 0)
+            if self.use_chromadb:
+                collection_count = self.collection.count()
                 
                 # Get sample of documents to analyze distribution
-                # Use a dummy query to fetch some documents
-                dummy_embedding = [0.1] * self.dimension
-                sample_docs = self.index.query(
-                    vector=dummy_embedding,
-                    top_k=min(100, collection_count),
-                    include_metadata=True
-                )
+                sample_docs = self.collection.get(limit=100, include=['metadatas'])
                 
                 # Count by ticker and type
                 ticker_counts = {}
                 type_counts = {'news': 0, 'reddit': 0, 'other': 0}
                 
-                if sample_docs['matches']:
-                    for match in sample_docs['matches']:
-                        metadata = match.get('metadata', {})
+                if sample_docs['metadatas']:
+                    for metadata in sample_docs['metadatas']:
                         ticker = metadata.get('ticker', 'unknown')
                         doc_type = metadata.get('type', 'other')
                         
@@ -672,13 +587,12 @@ class VectorDataManager:
                 
                 stats = {
                     'total_documents': collection_count,
-                    'collection_name': self.index_name,
-                    'database_path': 'pinecone_cloud',
+                    'collection_name': self.collection.name,
+                    'database_path': self.data_dir,
                     'document_types': type_counts,
                     'top_tickers': dict(sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)[:10]),
                     'last_updated': datetime.now().isoformat(),
-                    'storage_type': 'pinecone',
-                    'index_stats': stats_response
+                    'storage_type': 'chromadb'
                 }
                 
                 logger.info(f"Collection stats: {collection_count} total documents")
@@ -727,26 +641,17 @@ class VectorDataManager:
         try:
             logger.info(f"Clearing all data for ticker: {ticker}")
             
-            if self.use_pinecone:
-                # Get all document IDs for this ticker using a query
-                filter_dict = {'ticker': {'$eq': ticker}}
-                dummy_embedding = [0.1] * self.dimension
-                
-                # Fetch all documents for this ticker
-                results = self.index.query(
-                    vector=dummy_embedding,
-                    top_k=10000,  # Large number to get all documents
-                    include_metadata=True,
-                    filter=filter_dict
+            if self.use_chromadb:
+                # Get all document IDs for this ticker
+                results = self.collection.get(
+                    where={'ticker': ticker},
+                    include=['ids']
                 )
                 
-                if results['matches']:
-                    # Extract IDs to delete
-                    ids_to_delete = [match['id'] for match in results['matches']]
-                    
-                    # Delete documents from Pinecone
-                    self.index.delete(ids=ids_to_delete)
-                    logger.info(f"Deleted {len(ids_to_delete)} documents for {ticker}")
+                if results['ids']:
+                    # Delete all documents for this ticker
+                    self.collection.delete(ids=results['ids'])
+                    logger.info(f"Deleted {len(results['ids'])} documents for {ticker}")
                     return True
                 else:
                     logger.info(f"No documents found for {ticker}")
