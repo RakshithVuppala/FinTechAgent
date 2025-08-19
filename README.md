@@ -7,6 +7,16 @@
 
 > **Professional-grade investment research powered by AI with intelligent orchestration, caching, and comprehensive analysis capabilities.**
 
+## ✨ Recent Updates
+
+🔥 **Latest Enhancements** (v2.0):
+- **🚀 Pinecone Migration**: Upgraded from ChromaDB to enterprise-grade Pinecone vector database
+- **🎯 One-Command Setup**: Simple `python run.py` for instant deployment
+- **🤖 Centralized AI Config**: Unified model management with `ai_config.py`
+- **🐳 Docker Support**: Production-ready containerization with health checks
+- **💾 Enhanced Caching**: Improved performance with intelligent data persistence
+- **🔧 Better Error Handling**: Robust LLM connectivity and validation systems
+
 ## 🌟 Features
 
 ### 🎯 **Intelligent Orchestrator Agent**
@@ -33,6 +43,12 @@
 - **Error Prevention**: Stops analysis early to save time and resources
 - **User-friendly Guidance**: Clear error messages with actionable suggestions
 
+### 🗄️ **Advanced Vector Database**
+- **Pinecone Integration**: Enterprise-grade vector storage with semantic search
+- **Intelligent Caching**: Persistent storage for faster subsequent analyses
+- **Migration Support**: Automated migration from legacy ChromaDB systems
+- **Scalable Architecture**: Cloud-ready vector operations for growing datasets
+
 ### 🎨 **Professional Web Interface**
 - **Beautiful Dashboard**: Modern Streamlit interface with professional styling
 - **Interactive Charts**: Dynamic price charts and performance visualizations
@@ -41,45 +57,56 @@
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### 🎯 **One-Command Setup** (Recommended)
 
+```bash
+git clone https://github.com/your-username/FinTechAgent.git
+cd FinTechAgent
+python run.py
+```
+
+That's it! The script will:
+- ✅ Check Python compatibility (3.9+)
+- ✅ Install dependencies automatically
+- ✅ Set up environment files
+- ✅ Launch the web interface at `http://localhost:8501`
+
+> 💡 **See [QUICKSTART.md](QUICKSTART.md) for a 5-minute setup guide**
+
+### 📋 **Manual Installation** (Alternative)
+
+**Prerequisites:**
 - Python 3.9 or higher
 - pip package manager
 - Git
 
-### Installation
-
-1. **Clone the repository**
+1. **Clone and setup**
 ```bash
 git clone https://github.com/your-username/FinTechAgent.git
 cd FinTechAgent
-```
-
-2. **Create virtual environment**
-```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. **Install dependencies**
+2. **Install and configure**
 ```bash
 pip install -r requirements.txt
+cp .env.example .env  # Edit with your API keys (optional)
 ```
 
-4. **Set up environment variables**
-```bash
-cp .env.example .env
-# Edit .env with your API keys (optional for basic functionality)
-```
-
-### 🏃‍♂️ Running the Application
-
-**Launch the Streamlit Dashboard:**
+3. **Launch application**
 ```bash
 streamlit run src/streamlit_dashboard.py
 ```
 
-The application will be available at `http://localhost:8501`
+### 🐳 **Docker Deployment**
+
+For production deployment:
+```bash
+./scripts/deploy.sh
+```
+
+> 📚 **See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive deployment options**
 
 ## 📖 Usage Guide
 
@@ -103,15 +130,21 @@ The application will be available at `http://localhost:8501`
 For enhanced functionality, configure these optional API keys in your `.env` file:
 
 ```bash
-# GitHub AI (Free tier available)
-GITHUB_AI_API_KEY=your_github_ai_key
+# AI Model Configuration
+AI_MODEL=gpt-4o-mini                    # AI model to use across all agents
+GITHUB_AI_API_KEY=your_github_ai_key    # GitHub AI (Free tier available)
+OPENAI_API_KEY=your_openai_key          # OpenAI API (alternative)
 
-# Reddit API (For sentiment analysis)
+# Vector Database (for advanced features)
+PINECONE_API_KEY=your_pinecone_key      # Pinecone vector database
+
+# Data Sources (for enhanced analysis)
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
-
-# Alpha Vantage (For additional financial data)
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
+
+# Performance Tuning
+CACHE_DURATION_MINUTES=30
 ```
 
 ## 🏗️ Architecture
@@ -140,7 +173,7 @@ graph TB
 | **Financial Agent** | Quantitative analysis engine | P/E ratios, market cap, risk metrics |
 | **Market Agent** | Sentiment and news analysis | Social sentiment, news impact, risk factors |
 | **Data Collector** | Multi-source data aggregation | Yahoo Finance, SEC, news, Reddit |
-| **Vector Manager** | Unstructured data storage | ChromaDB integration, semantic search |
+| **Vector Manager** | Unstructured data storage | Pinecone integration, semantic search |
 
 ## 📊 Example Analysis
 
@@ -172,7 +205,10 @@ graph TB
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
+| `AI_MODEL` | AI model for all agents | No | gpt-4o-mini |
 | `GITHUB_AI_API_KEY` | GitHub AI API key for LLM features | No | None |
+| `OPENAI_API_KEY` | OpenAI API key (alternative to GitHub) | No | None |
+| `PINECONE_API_KEY` | Pinecone vector database API key | No | None |
 | `REDDIT_CLIENT_ID` | Reddit API for sentiment analysis | No | None |
 | `ALPHA_VANTAGE_API_KEY` | Additional financial data source | No | None |
 | `CACHE_DURATION_MINUTES` | Cache TTL in minutes | No | 30 |
@@ -190,7 +226,7 @@ graph TB
 
 ```
 FinTechAgent/
-├── src/
+├── src/                        # Source code
 │   ├── agents/                 # AI agent implementations
 │   │   ├── financial_agent.py  # Financial analysis engine
 │   │   ├── market_agent.py     # Market intelligence engine
@@ -198,10 +234,22 @@ FinTechAgent/
 │   ├── streamlit_dashboard.py  # Web interface
 │   ├── financial_data_collector.py # Data collection
 │   ├── data_manager.py         # Structured data management
-│   └── vector_manager.py       # Vector database operations
+│   ├── vector_manager.py       # Vector database operations
+│   ├── ai_config.py            # Centralized AI configuration
+│   └── config.py              # Application configuration
+├── scripts/                    # Deployment and utility scripts
+│   ├── deploy.sh              # Production deployment
+│   └── setup.py               # Environment setup
 ├── data/                       # Data directories (gitignored)
+├── logs/                       # Application logs
+├── models/                     # Saved models
+├── run.py                      # One-command startup script
+├── Dockerfile                  # Container configuration
+├── docker-compose.yml          # Multi-container orchestration
 ├── requirements.txt            # Python dependencies
 ├── .env.example               # Environment template
+├── QUICKSTART.md              # 5-minute setup guide
+├── DEPLOYMENT.md              # Comprehensive deployment guide
 └── README.md                  # This file
 ```
 
@@ -209,13 +257,16 @@ FinTechAgent/
 
 ```bash
 # Run basic functionality tests
-python src/test_basic_functionality.py
+python test_basic_functionality.py
 
-# Test ticker validation
-python src/test_ticker_validation.py
+# Test different tickers
+python test_different_tickers.py
 
-# Test orchestrator
-python src/test_orchestrator.py
+# Test LLM connectivity
+python test_llm_connectivity.py
+
+# Test agent fixes
+python test_agent_fixes.py
 ```
 
 ## 🤝 Contributing
@@ -245,8 +296,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Yahoo Finance**: Free financial data API
 - **Streamlit**: Excellent web framework for Python
-- **ChromaDB**: Vector database for unstructured data
+- **Pinecone**: Enterprise vector database for semantic search
 - **OpenAI/GitHub**: AI model integration
+- **Docker**: Containerization platform for deployment
 
 ## 📞 Support
 
@@ -256,12 +308,17 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔮 Roadmap
 
+- [x] **Vector Database Migration**: Upgraded from ChromaDB to Pinecone ✅
+- [x] **Centralized AI Configuration**: Unified model management ✅
+- [x] **One-Command Setup**: Simplified installation process ✅
+- [x] **Docker Support**: Production-ready containerization ✅
 - [ ] **Real-time Streaming**: Live market data integration
 - [ ] **Portfolio Analysis**: Multi-stock portfolio optimization
 - [ ] **Options Analysis**: Options pricing and Greeks calculation
 - [ ] **Technical Analysis**: Chart patterns and technical indicators
 - [ ] **News Alerts**: Real-time news impact notifications
 - [ ] **API Integration**: RESTful API for programmatic access
+- [ ] **Multi-language Support**: Extend beyond Python ecosystem
 
 ---
 
