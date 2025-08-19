@@ -28,6 +28,7 @@ from data_manager import StructuredDataManager
 from vector_manager import VectorDataManager
 from agents.financial_agent import EnhancedFinancialAnalysisAgent
 from agents.market_agent import MarketIntelligenceAgent
+from ai_config import get_ai_model
 
 # Import the new Orchestrator Agent
 from agents.orchestrator_agent import InvestmentResearchOrchestrator
@@ -147,7 +148,7 @@ def check_api_status():
             )
             # Use exact same test as your working code
             completion = client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[{"role": "user", "content": "test"}]
             )
             api_status["github_ai"] = {"status": "configured", "message": "GitHub AI API working"}

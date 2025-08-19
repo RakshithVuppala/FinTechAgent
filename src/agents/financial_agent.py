@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from typing import Dict, Any
 import logging
 import json
+from ai_config import get_ai_model
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ Keep your response concise and professional. Focus on actionable insights for in
 
             # Make LLM call
             response = self.llm_client.chat.completions.create(
-                model="gpt-4o",  # GPT-4o model for enhanced analysis
+                model=get_ai_model(),  # Centralized model configuration
                 messages=[
                     {
                         "role": "system",
@@ -160,7 +161,7 @@ Keep your response concise and professional. Focus on actionable insights for in
             return {
                 "detailed_analysis": llm_analysis,
                 "analysis_timestamp": "2024-01-01",  # You'd use real timestamp
-                "model_used": "gpt-4o",
+                "model_used": get_ai_model(),
                 "analysis_type": "financial_fundamentals",
             }
 
@@ -198,7 +199,7 @@ Be specific and actionable. Limit to 300 words.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[
                     {
                         "role": "system",
@@ -216,7 +217,7 @@ Be specific and actionable. Limit to 300 words.
                 "recommendation_text": recommendation,
                 "generated_at": "2024-01-01",  # Real timestamp
                 "confidence_level": "High",  # Could be calculated
-                "model_used": "gpt-4o",
+                "model_used": get_ai_model(),
             }
 
         except Exception as e:

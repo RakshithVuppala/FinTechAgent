@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from typing import Dict, List, Any
 import logging
 from vector_manager import VectorDataManager
+from ai_config import get_ai_model
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ Keep response concise and actionable. Focus specifically on {focus_area}.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[
                     {"role": "system", "content": f"You are a market intelligence analyst specializing in {focus_area} analysis."},
                     {"role": "user", "content": prompt}
@@ -192,7 +193,7 @@ Keep response concise and actionable. Focus specifically on {focus_area}.
                 'confidence': self._calculate_confidence(documents),
                 'source_count': len(documents),
                 'sources_used': source_info,
-                'model_used': 'gpt-4o'
+                'model_used': get_ai_model()
             }
             
         except Exception as e:
@@ -303,7 +304,7 @@ Keep response concise and actionable for investment decisions.
 """
 
             response = self.llm_client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[
                     {"role": "system", "content": "You are a senior market analyst providing overall market assessment."},
                     {"role": "user", "content": prompt}

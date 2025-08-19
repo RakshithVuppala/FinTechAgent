@@ -10,6 +10,8 @@ sys.path.append('src')
 from dotenv import load_dotenv
 load_dotenv()
 
+from ai_config import get_ai_model
+
 # Mock Streamlit for testing
 class MockSecrets:
     def get(self, key, default=None):
@@ -60,7 +62,7 @@ def test_direct_api_call():
         )
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=get_ai_model(),
             messages=[{"role": "user", "content": "test"}],
             max_tokens=5
         )

@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Add src to path for ai_config import
+sys.path.append('src')
+from ai_config import get_ai_model
+
 def test_github_ai():
     """Test GitHub AI API connectivity"""
     print("\n=== Testing GitHub AI API ===")
@@ -35,7 +39,7 @@ def test_github_ai():
         # Test chat completion instead of models.list() which may not be supported
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[{"role": "user", "content": "Say 'GitHub AI is working'"}],
                 max_tokens=10
             )
@@ -81,7 +85,7 @@ def test_openai_direct():
             
             # Test chat completion
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=get_ai_model(),
                 messages=[
                     {"role": "user", "content": "Say 'OpenAI is working'"}
                 ],
